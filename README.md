@@ -248,7 +248,6 @@ MIT License - Feel free to use and modify!
 
 - [npm Package](https://www.npmjs.com/package/nexus-agent)
 - [GitHub Repository](https://github.com/Remote-Skills/nexus-npm)
-- [Python Version](https://pypi.org/project/nexus-ai-agent/)
 - [Anthropic Claude](https://www.anthropic.com/claude)
 
 ## Troubleshooting

@@ -136,7 +136,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
   ];
   
   let iterationCount = 0;
-  const completedActions = new Set<string>();
+  let actionCount = 0;
   const spinner = ora();
   
   console.log(chalk.cyan('🎯 TASK:'), chalk.white(userMessage));
@@ -176,7 +176,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         // No more tools to use, agent is done
         console.log(chalk.green('✅ COMPLETED'));
         console.log(chalk.gray(`Total iterations: ${iterationCount}`));
-        console.log(chalk.gray(`Actions performed: ${completedActions.size}`));
+        console.log(chalk.gray(`Actions performed: ${actionCount}`));
         break;
       }
       
@@ -195,22 +195,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         const toolInput = toolBlock.input;
         const toolId = toolBlock.id;
         
-        // Track action with exact signature
-        const actionSignature = `${toolName}:${JSON.stringify(toolInput)}`;
-        
-        // Only block EXACT duplicates (same tool + same parameters)
-        if (completedActions.has(actionSignature)) {
-          console.log(chalk.yellow(`⚠️  Skipping exact duplicate: ${toolName}`));
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: toolId,
-            content: 'This exact action was already completed - skipping to avoid duplication'
-          });
-          continue;
-        }
-        
-        // Track action
-        completedActions.add(actionSignature);
+        actionCount++;
         
         // Execute tool
         console.log(chalk.magenta('🔧 TOOL:'), chalk.white(toolName));

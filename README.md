@@ -138,7 +138,7 @@ nexus --help
 ### Programmatic Usage
 
 ```typescript
-import { chatWithToolsAgentic } from '@remoteskills/nexus';
+import { chatWithToolsAgentic } from 'nexus-agent';
 
 await chatWithToolsAgentic("Create a REST API with authentication");
 ```
@@ -180,7 +180,7 @@ nexus "Organize all .md files into a docs folder and create an index"
 
 **Cross-Platform Compatibility**: npm packages work identically on Windows, Mac, and Linux without PATH issues.
 
-**Instant Availability**: Use `npx @remoteskills/nexus` anywhere without installation.
+**Instant Availability**: Use `npx nexus-agent` anywhere without installation.
 
 **Better Bin Scripts**: npm automatically handles executable scripts cross-platform.
 
@@ -233,7 +233,7 @@ MIT License - Feel free to use and modify!
 
 ## Links
 
-- [npm Package](https://www.npmjs.com/package/@remoteskills/nexus)
+- [npm Package](https://www.npmjs.com/package/nexus-agent)
 - [GitHub Repository](https://github.com/Remote-Skills/nexus-npm)
 - [Python Version](https://pypi.org/project/nexus-ai-agent/)
 - [Anthropic Claude](https://www.anthropic.com/claude)
@@ -282,7 +282,6 @@ export PATH=$PATH:~/.local/bin
 
 - **Issues**: [GitHub Issues](https://github.com/Remote-Skills/nexus-npm/issues)
 - **Email**: hi@remoteskills.io
-- **Twitter**: [@RemoteSkills](https://twitter.com/RemoteSkills)
 
 ---
 

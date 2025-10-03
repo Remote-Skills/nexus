@@ -4,23 +4,23 @@ import ora from 'ora';
 import { tools } from './tools/index.js';
 import { executeTool } from './tools/executor.js';
 
-// Validate API key before creating client
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error(chalk.red('\n❌ Error: ANTHROPIC_API_KEY is required but not set.'));
-  console.log(chalk.yellow('\nPlease configure your API key using one of these methods:'));
-  console.log(chalk.gray('  • Create a .env file: ANTHROPIC_API_KEY=your_key'));
-  console.log(chalk.gray('  • Use --api-key flag: nexus --api-key your_key "task"'));
-  console.log(chalk.gray('  • Set environment: export ANTHROPIC_API_KEY=your_key\n'));
-  process.exit(1);
-}
-
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
 const MAX_TOKENS = parseInt(process.env.ANTHROPIC_MAX_TOKENS || '4096');
 const MAX_ITERATIONS = 15;
+
+// Lazy client initialization
+let client: Anthropic;
+function getClient(): Anthropic {
+  if (!client) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error('ANTHROPIC_API_KEY is not set');
+    }
+    client = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+  }
+  return client;
+}
 
 interface Message {
   role: 'user' | 'assistant';
@@ -82,7 +82,8 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
     try {
       spinner.start(chalk.gray(`Thinking... (iteration ${iterationCount}/${MAX_ITERATIONS})`));
       
-      const response = await client.messages.create({
+      const apiClient = getClient();
+      const response = await apiClient.messages.create({
         model: MODEL,
         max_tokens: MAX_TOKENS,
         system: SYSTEM_PROMPT,

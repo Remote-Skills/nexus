@@ -1,6 +1,6 @@
 # Nexus - Intelligent Agentic File Assistant
 
-[![npm version](https://badge.fury.io/js/%40remoteskills%2Fnexus.svg)](https://www.npmjs.com/package/@remoteskills/nexus)
+[![npm version](https://badge.fury.io/js/%40remoteskills%2Fnexus.svg)](https://www.npmjs.com/package/nexus-agent)
 [![Node.js 18+](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -13,13 +13,13 @@ A powerful AI agent powered by Claude that plans and executes complex file opera
 ### Use with npx (No Installation Required)
 
 ```bash
-npx @remoteskills/nexus "Create a Node.js Express server"
+npx nexus-agent "Create a Node.js Express server"
 ```
 
 ### Or Install Globally
 
 ```bash
-npm install -g @remoteskills/nexus
+npm install -g nexus-agent
 
 # Now use anywhere
 nexus "Create a React component"
@@ -29,7 +29,7 @@ nexus -i  # Interactive mode
 ### Or Install Locally in Project
 
 ```bash
-npm install @remoteskills/nexus
+npm install nexus-agent
 
 # Use with npx
 npx nexus "your task"
@@ -37,21 +37,21 @@ npx nexus "your task"
 
 ## Features
 
-### 🧠 Agentic Planning
+### Agentic Planning
 - **Automatic Planning**: Creates a TODO list before executing tasks
 - **Step-by-Step Execution**: Executes each step methodically
 - **Loop Detection**: Prevents infinite loops and repeated actions
 - **Adaptive Planning**: Adjusts plan if something fails
 - **Progress Tracking**: Shows thinking, progress, and stats
 
-### 📁 Smart File Operations
+### Smart File Operations
 - **Create/Read/Edit/Delete files** with intelligent handling
 - **Smart Reading**: Line ranges, previews, search within files
 - **Smart Search**: Find files by name pattern or content
 - **Directory Exclusions**: Automatically skips node_modules, .git, etc.
 - **Token Optimization**: 10K character limit prevents token explosion
 
-### 🛡️ Safety Mechanisms
+### Safety Mechanisms
 - **Iteration Limits**: Max 15 iterations to prevent runaway
 - **Loop Detection**: Detects and warns about repeated actions
 - **Action Tracking**: Prevents duplicate operations
@@ -235,21 +235,21 @@ nexus -k your_key "your task"
 
 ```bash
 # Check global install location
-npm list -g @remoteskills/nexus
+npm list -g nexus-agent
 
 # Try with npx
-npx @remoteskills/nexus "your task"
+npx nexus-agent "your task"
 
 # Or reinstall
-npm uninstall -g @remoteskills/nexus
-npm install -g @remoteskills/nexus
+npm uninstall -g nexus-agent
+npm install -g nexus-agent
 ```
 
 ### Permission Errors
 
 ```bash
 # Install without sudo (recommended)
-npm install -g @remoteskills/nexus --prefix ~/.local
+npm install -g nexus-agent --prefix ~/.local
 
 # Add to PATH
 export PATH=$PATH:~/.local/bin

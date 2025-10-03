@@ -94,26 +94,23 @@ ERROR RECOVERY PROTOCOL:
 When a tool fails:
 1. Read the error message carefully
 2. Identify what's missing or wrong (e.g., missing parameters, file not found)
-3. Try a DIFFERENT approach - don't repeat the same action
-4. If you need more information, use read_file or list_files first
-5. Common fixes:
+3. Fix the issue and retry, or try a different approach
+4. Common fixes:
    - edit_file needs old_text? → Use read_file first to get exact content
-   - create_file failed? → Make sure you're providing the content parameter
+   - Missing parameters? → Add them and retry
    - File not found? → Use list_files to verify the correct path
    - Can't find text to replace? → Read the file again and copy exact text
 
 TOOL USAGE BEST PRACTICES:
-- Before edit_file in replace mode: ALWAYS use read_file first to see current content
+- Before edit_file in replace mode: Use read_file first to see current content
 - Before delete_file: Consider if you can use edit_file instead
 - Before create_file: Use list_files to check if file already exists
 - After any write operation: Use read_file to verify the change worked
 
 SAFETY:
 - You have a maximum of ${MAX_ITERATIONS} iterations
-- Avoid infinite loops
-- Don't repeat failed actions more than twice
-- Ask for clarification if task is unclear
-- If a tool fails 3 times, try a completely different approach`;
+- Avoid infinite loops by trying different approaches when stuck
+- Ask for clarification if task is unclear`;
 
   // Append custom instructions if found
   if (customInstructions) {
@@ -198,35 +195,21 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         const toolInput = toolBlock.input;
         const toolId = toolBlock.id;
         
-        // Track action
+        // Track action with exact signature
         const actionSignature = `${toolName}:${JSON.stringify(toolInput)}`;
         
+        // Only block EXACT duplicates (same tool + same parameters)
         if (completedActions.has(actionSignature)) {
-          console.log(chalk.yellow(`⚠️  Exact duplicate detected: ${toolName}`));
-          
-          // Count how many times this tool was used
-          const attemptCount = Array.from(completedActions)
-            .filter(sig => sig.startsWith(`${toolName}:`)).length;
-          
-          if (attemptCount >= 3) {
-            console.log(chalk.red(`❌ Tool ${toolName} failed 3 times, stopping to prevent infinite loop`));
-            toolResults.push({
-              type: 'tool_result',
-              tool_use_id: toolId,
-              content: `Error: This tool has failed ${attemptCount} times. Please try a DIFFERENT approach or ask the user for clarification. Consider using other available tools like list_files or read_file to gather more context.`,
-              is_error: true
-            });
-            continue;
-          }
-          
+          console.log(chalk.yellow(`⚠️  Skipping exact duplicate: ${toolName}`));
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolId,
-            content: 'Action already completed - skipping to avoid duplication'
+            content: 'This exact action was already completed - skipping to avoid duplication'
           });
           continue;
         }
         
+        // Track action
         completedActions.add(actionSignature);
         
         // Execute tool

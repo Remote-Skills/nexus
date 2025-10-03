@@ -30,9 +30,6 @@ export async function executeTool(name: string, input: any): Promise<string> {
       if (!input.path) {
         throw new Error('edit_file requires "path" parameter');
       }
-      if (input.new_text === undefined || input.new_text === null) {
-        throw new Error('edit_file requires "new_text" parameter');
-      }
       if (!input.mode) {
         throw new Error('edit_file requires "mode" parameter ("replace" or "append")');
       }
@@ -41,6 +38,10 @@ export async function executeTool(name: string, input: any): Promise<string> {
       }
       if (input.mode === 'replace' && (!input.old_text || input.old_text === '')) {
         throw new Error('edit_file in replace mode requires "old_text" parameter. Use read_file first to get the exact text you want to replace.');
+      }
+      // Allow missing new_text - treat as deletion (replace with empty string)
+      if (input.new_text === undefined || input.new_text === null) {
+        input.new_text = '';
       }
       return await editFile(input);
     

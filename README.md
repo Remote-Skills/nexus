@@ -56,6 +56,8 @@ npx nexus "your task"
 - **Loop Detection**: Detects and warns about repeated actions
 - **Action Tracking**: Prevents duplicate operations
 - **Error Handling**: Graceful failure with helpful messages
+- **Command Timeouts**: Default 30s timeout prevents hanging on long-running commands
+- **Output Limits**: 10K character limit prevents memory issues from large outputs
 
 ## Configuration
 
@@ -165,6 +167,13 @@ nexus "Find all files using 'var' and suggest converting to 'const' or 'let'"
 nexus "Organize all .md files into a docs folder and create an index"
 ```
 
+### Command Execution
+```bash
+nexus "Run npm install and check if there are any errors"
+nexus "Check git status and create a commit with all changes"
+nexus "Run the test suite and summarize the results"
+```
+
 ## Available Tools
 
 | Tool | Description |
@@ -175,6 +184,7 @@ nexus "Organize all .md files into a docs folder and create an index"
 | `delete_file` | Delete files |
 | `list_files` | List directory contents (excludes build dirs) |
 | `smart_search` | Search by filename or content recursively |
+| `run_command` | Execute shell commands with timeout protection (30s default, max 300s) |
 
 ## Why npm instead of pip?
 
@@ -218,6 +228,9 @@ npm start "your task"
 - **Character Limit**: 10K default for reads
 - **Loop Detection**: Prevents infinite loops
 - **Excluded Dirs**: Skips node_modules, .git, dist, build, etc.
+- **Command Timeout**: 30s default, configurable up to 300s (5 minutes)
+- **Output Truncation**: Command output limited to 10K characters by default
+- **Error Handling**: Failed commands return error info instead of crashing
 
 ## Contributing
 

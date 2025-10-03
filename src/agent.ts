@@ -76,6 +76,7 @@ AVAILABLE TOOLS:
 - delete_file: Delete files
 - list_files: List directory contents
 - smart_search: Search for files or content recursively
+- run_command: Execute shell commands with timeout protection (npm, git, build tools, etc.)
 
 PLANNING FORMAT:
 When you receive a task, first respond with:

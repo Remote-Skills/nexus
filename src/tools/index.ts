@@ -132,5 +132,31 @@ export const tools = [
       },
       required: ['pattern', 'search_type']
     }
+  },
+  {
+    name: 'run_command',
+    description: 'Execute a shell command and return its output. Includes timeout protection to prevent hanging. Use for: running tests, checking versions, installing packages, building projects, git operations, etc.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        command: {
+          type: 'string',
+          description: 'The shell command to execute (e.g., "npm install", "git status", "python --version")'
+        },
+        working_directory: {
+          type: 'string',
+          description: 'Working directory for command execution (default: current directory)'
+        },
+        timeout_seconds: {
+          type: 'number',
+          description: 'Maximum execution time in seconds (default: 30, max recommended: 300)'
+        },
+        max_output_chars: {
+          type: 'number',
+          description: 'Maximum characters of output to return (default: 10000)'
+        }
+      },
+      required: ['command']
+    }
   }
 ];

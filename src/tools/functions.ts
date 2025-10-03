@@ -1,5 +1,9 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 const EXCLUDED_DIRS = new Set([
   'node_modules', '.git', '.svn', '__pycache__', '.venv', 'venv', 'env',
@@ -219,5 +223,66 @@ export async function smartSearch(args: {
     return `Found ${results.length} matches:\n\n${results.join('\n')}`;
   } catch (error: any) {
     throw new Error(`Search failed: ${error.message}`);
+  }
+}
+
+export async function runCommand(args: {
+  command: string;
+  working_directory?: string;
+  timeout_seconds?: number;
+  max_output_chars?: number;
+}): Promise<string> {
+  try {
+    const timeout = (args.timeout_seconds || 30) * 1000; // Default 30 seconds
+    const maxOutputChars = args.max_output_chars || 10000;
+    const cwd = args.working_directory || process.cwd();
+    
+    // Create timeout promise
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Command timed out after ${args.timeout_seconds || 30} seconds`));
+      }, timeout);
+    });
+    
+    // Execute command with timeout
+    const execPromise = execAsync(args.command, {
+      cwd,
+      maxBuffer: 5 * 1024 * 1024, // 5MB buffer
+      timeout,
+      windowsHide: true, // Hide console window on Windows
+    });
+    
+    const result = await Promise.race([execPromise, timeoutPromise]);
+    
+    // Combine stdout and stderr
+    let output = '';
+    if (result.stdout) output += `STDOUT:\n${result.stdout}\n`;
+    if (result.stderr) output += `STDERR:\n${result.stderr}\n`;
+    
+    if (!output) {
+      output = 'Command executed successfully with no output.';
+    }
+    
+    // Truncate if too long
+    if (output.length > maxOutputChars) {
+      output = output.substring(0, maxOutputChars) + 
+        `\n\n... (output truncated, showed ${maxOutputChars} of ${output.length} characters)`;
+    }
+    
+    return `Command: ${args.command}\nWorking Directory: ${cwd}\n\n${output}`;
+    
+  } catch (error: any) {
+    // Handle command execution errors
+    if (error.killed) {
+      throw new Error(`Command was killed (timeout: ${args.timeout_seconds || 30}s)`);
+    }
+    
+    let errorMsg = `Command failed: ${args.command}\n`;
+    
+    if (error.stdout) errorMsg += `\nSTDOUT:\n${error.stdout}`;
+    if (error.stderr) errorMsg += `\nSTDERR:\n${error.stderr}`;
+    if (error.code !== undefined) errorMsg += `\nExit Code: ${error.code}`;
+    
+    return errorMsg; // Return error as string instead of throwing
   }
 }

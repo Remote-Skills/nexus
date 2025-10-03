@@ -4,7 +4,8 @@ import {
   editFile,
   deleteFile,
   listFiles,
-  smartSearch
+  smartSearch,
+  runCommand
 } from './functions.js';
 
 export async function executeTool(name: string, input: any): Promise<string> {
@@ -26,6 +27,9 @@ export async function executeTool(name: string, input: any): Promise<string> {
     
     case 'smart_search':
       return await smartSearch(input);
+    
+    case 'run_command':
+      return await runCommand(input);
     
     default:
       throw new Error(`Unknown tool: ${name}`);

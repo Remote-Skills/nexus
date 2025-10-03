@@ -1,4 +1,4 @@
-# Nexus - Intelligent Agentic File Assistant
+# Nexus - Intelligent Agentic Code Assistant
 
 [![npm version](https://badge.fury.io/js/%40remoteskills%2Fnexus.svg)](https://www.npmjs.com/package/nexus-agent)
 [![Node.js 18+](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org/)

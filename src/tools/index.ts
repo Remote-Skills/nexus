@@ -1,7 +1,17 @@
 export const tools = [
   {
     name: 'create_file',
-    description: 'Create a new file with specified content',
+    description: `Create a new file with specified content. Use this for brand new files only.
+
+REQUIRED PARAMETERS:
+- path: File path (relative or absolute)
+- content: File content (use "" for empty file, never leave undefined)
+
+BEST PRACTICES:
+- Check if file exists first using list_files
+- If file already exists, use edit_file instead
+- Always provide content parameter, even if empty
+- Directories are created automatically if needed`,
     input_schema: {
       type: 'object',
       properties: {
@@ -19,7 +29,19 @@ export const tools = [
   },
   {
     name: 'read_file',
-    description: 'Read file contents with smart features: line ranges, preview, search',
+    description: `Read file contents with smart features: line ranges, preview, search.
+
+USAGE PATTERNS:
+1. Full read: Just provide path (auto-truncates if >10KB)
+2. Preview: Set preview_only=true for first 500 chars
+3. Line range: Use start_line and end_line for specific sections
+4. Search: Provide search_term to find matching lines
+
+BEST PRACTICES:
+- ALWAYS use this before edit_file in replace mode
+- Use preview_only=true for large files first
+- Use line ranges for targeted reading
+- Results are truncated at max_chars (default 10000) to prevent overwhelming output`,
     input_schema: {
       type: 'object',
       properties: {
@@ -53,7 +75,31 @@ export const tools = [
   },
   {
     name: 'edit_file',
-    description: 'Edit existing file by replacing content or appending',
+    description: `Edit existing file by replacing specific text or appending new content.
+
+IMPORTANT USAGE PATTERNS:
+1. REPLACE MODE (most common):
+   - REQUIRED: First use read_file to see the current content
+   - Copy the EXACT text you want to replace (including whitespace, newlines, indentation)
+   - Provide both old_text (exact match) and new_text
+   - Use cases: Replace entire function, update config value, fix code
+
+2. APPEND MODE:
+   - Adds new_text to the end of file
+   - No old_text needed
+   - Use cases: Add new import, append log entry, add new function
+
+COMMON MISTAKES TO AVOID:
+- ❌ Using empty or undefined old_text in replace mode
+- ❌ Guessing at file content instead of reading it first
+- ❌ Trying to replace text that doesn't exactly match
+- ❌ Using this for new files (use create_file instead)
+
+BEST PRACTICE WORKFLOW:
+1. read_file to see current content
+2. Copy exact text to replace
+3. edit_file with that exact old_text
+4. read_file again to verify it worked`,
     input_schema: {
       type: 'object',
       properties: {

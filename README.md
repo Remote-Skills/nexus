@@ -80,6 +80,39 @@ export ANTHROPIC_API_KEY=your_key
 nexus "your task"
 ```
 
+### Custom Project Instructions
+
+Nexus automatically looks for `CLAUDE.md` or `AGENTS.md` in your current directory. If found, the content is included in the system prompt, allowing you to provide project-specific instructions, coding standards, or context.
+
+**Example `CLAUDE.md`:**
+
+```markdown
+# Project Instructions
+
+## Coding Standards
+- Use TypeScript strict mode
+- Follow functional programming patterns
+- Add JSDoc comments for public APIs
+
+## Project Structure
+- Components go in `src/components/`
+- Tests use Jest with `.test.ts` extension
+- All exports must be typed
+
+## Domain Knowledge
+- This is an e-commerce platform
+- User authentication uses JWT tokens
+- Database is PostgreSQL with Prisma ORM
+```
+
+**How it works:**
+1. Create `CLAUDE.md` or `AGENTS.md` in your project root
+2. Add any project-specific guidelines, context, or requirements
+3. Run Nexus from that directory - it automatically loads your instructions
+4. The AI follows your custom guidelines when working on tasks
+
+This is perfect for maintaining consistency across team members or ensuring AI agents understand your project's specific requirements!
+
 ## Usage
 
 ### CLI Mode

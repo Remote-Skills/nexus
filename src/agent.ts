@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import chalk from 'chalk';
 import ora from 'ora';
+import fs from 'fs';
+import path from 'path';
 import { tools } from './tools/index.js';
 import { executeTool } from './tools/executor.js';
 
@@ -27,8 +29,37 @@ interface Message {
   content: string | any[];
 }
 
-// System prompt for agentic behavior
-const SYSTEM_PROMPT = `You are Nexus, an intelligent agentic file assistant. You help users with file operations by planning and executing tasks step-by-step.
+/**
+ * Check for CLAUDE.md or AGENTS.md in the current directory
+ * and return its content if found
+ */
+function loadCustomInstructions(): string | null {
+  const cwd = process.cwd();
+  const possibleFiles = ['CLAUDE.md', 'AGENTS.md'];
+  
+  for (const filename of possibleFiles) {
+    const filePath = path.join(cwd, filename);
+    try {
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        console.log(chalk.green(`📄 Loaded custom instructions from: ${filename}`));
+        return content;
+      }
+    } catch (error) {
+      // Silently ignore read errors
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Build the system prompt, optionally including custom instructions
+ */
+function buildSystemPrompt(): string {
+  const customInstructions = loadCustomInstructions();
+  
+  let systemPrompt = `You are Nexus, an intelligent agentic file assistant. You help users with file operations by planning and executing tasks step-by-step.
 
 CRITICAL INSTRUCTIONS:
 1. ALWAYS create a detailed TODO list/plan BEFORE taking any action
@@ -64,6 +95,24 @@ SAFETY:
 - Don't repeat failed actions
 - Ask for clarification if task is unclear`;
 
+  // Append custom instructions if found
+  if (customInstructions) {
+    systemPrompt += `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CUSTOM PROJECT INSTRUCTIONS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${customInstructions}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Follow the custom project instructions above when working in this directory.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  }
+  
+  return systemPrompt;
+}
+
 export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
   const messages: Message[] = [
     { role: 'user', content: userMessage }
@@ -86,7 +135,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
       const response = await apiClient.messages.create({
         model: MODEL,
         max_tokens: MAX_TOKENS,
-        system: SYSTEM_PROMPT,
+        system: buildSystemPrompt(),
         messages: messages as any,
         tools: tools as any,
       });

@@ -8,7 +8,7 @@ A powerful AI agent powered by Claude that plans and executes complex file opera
 
 **✅ Works on Windows, Mac, and Linux out of the box!**
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Use with npx (No Installation Required)
 
@@ -153,22 +153,12 @@ nexus "Organize all .md files into a docs folder and create an index"
 
 **Modern Tooling**: TypeScript provides better type safety and developer experience.
 
-## Comparison with Python Version
-
-| Feature | Python | npm |
-|---------|--------|-----|
-| Cross-platform CLI | ❌ Requires PATH setup on Windows | ✅ Works everywhere |
-| Installation | `pip install` | `npm install -g` or use `npx` |
-| No install usage | ❌ Not available | ✅ `npx @remoteskills/nexus` |
-| Type safety | Limited (optional) | ✅ TypeScript |
-| Package management | Sometimes problematic | ✅ Reliable |
-
 ## Development
 
 ```bash
 # Clone repository
-git clone https://github.com/Remote-Skills/nexus-npm
-cd nexus-npm
+git clone https://github.com/Remote-Skills/nexus
+cd nexus
 
 # Install dependencies
 npm install

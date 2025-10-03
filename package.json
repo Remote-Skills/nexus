@@ -1,0 +1,52 @@
+{
+  "name": "@remoteskills/nexus",
+  "version": "1.0.0",
+  "description": "Intelligent Agentic File Assistant powered by Claude - Works cross-platform out of the box",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "nexus": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "prepublishOnly": "npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "claude",
+    "anthropic",
+    "agentic",
+    "cli",
+    "automation",
+    "file-operations",
+    "assistant"
+  ],
+  "author": "Chiheb Nabil <hi@remoteskills.io>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Remote-Skills/nexus-npm"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.28.0",
+    "boxen": "^5.1.2",
+    "chalk": "^4.1.2",
+    "commander": "^12.0.0",
+    "dotenv": "^16.4.5",
+    "ora": "^5.4.1",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/prompts": "^2.4.9",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

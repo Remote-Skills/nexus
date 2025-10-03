@@ -31,17 +31,46 @@ BEST PRACTICES:
     name: 'read_file',
     description: `Read file contents with smart features: line ranges, preview, search.
 
-USAGE PATTERNS:
-1. Full read: Just provide path (auto-truncates if >10KB)
-2. Preview: Set preview_only=true for first 500 chars
-3. Line range: Use start_line and end_line for specific sections
-4. Search: Provide search_term to find matching lines
+⚠️  CRITICAL: Reading costs tokens! Be strategic!
 
-BEST PRACTICES:
-- ALWAYS use this before edit_file in replace mode
-- Use preview_only=true for large files first
-- Use line ranges for targeted reading
-- Results are truncated at max_chars (default 10000) to prevent overwhelming output`,
+SMART READING STRATEGY:
+1. 📊 PREVIEW FIRST (500 chars)
+   read_file(path: "file.ts", preview_only: true)
+   → See file size, imports, structure
+   → Decide if full read is needed
+
+2. 🔍 SEARCH FOR CONTEXT (targeted)
+   read_file(path: "file.ts", search_term: "function login")
+   → Find specific code you need
+   → Get line numbers for targeted reading
+
+3. 🎯 READ SPECIFIC SECTIONS (line ranges)
+   read_file(path: "file.ts", start_line: 45, end_line: 80)
+   → Read only the function you need to edit
+   → Avoid reading entire file
+
+4. 📖 FULL READ (last resort)
+   read_file(path: "config.json")
+   → Only for small files (<5KB)
+   → Auto-truncates at 10KB
+
+WHEN TO USE EACH MODE:
+- preview_only: Unknown files, checking size/type
+- search_term: Finding specific code/config
+- line ranges: Reading specific functions/sections
+- Full read: Small config files only (<5KB)
+
+❌ NEVER:
+- Read large files (>10KB) without preview first
+- Read entire implementation files blindly
+- Read minified files or dependencies
+- Read files you don't need
+
+✅ BEST PRACTICES:
+- Use smart_search to find files first
+- Preview before full read
+- Use line ranges for code sections
+- Search for specific terms when possible`,
     input_schema: {
       type: 'object',
       properties: {
@@ -140,7 +169,28 @@ BEST PRACTICE WORKFLOW:
   },
   {
     name: 'list_files',
-    description: 'List directory contents (excludes common build/cache directories)',
+    description: `List directory contents - Your FIRST step for exploration!
+
+📊 LOW COST, HIGH VALUE:
+- Shows directory structure without reading files
+- Reveals file sizes to help prioritize
+- Fast and cheap - use liberally!
+
+WHEN TO USE:
+1. 🎯 ALWAYS use this FIRST when starting a task
+2. 📋 Understanding project structure
+3. 🔍 Finding configuration files
+4. 📁 Exploring directories before deep diving
+
+STRATEGY:
+- Non-recursive: Quick overview of current directory
+- Recursive: See full project structure
+
+EXAMPLES:
+list_files() → See current directory
+list_files(path: "src", recursive: true) → Explore src/ tree
+
+✅ BEST PRACTICE: Use this before reading any files!`,
     input_schema: {
       type: 'object',
       properties: {
@@ -158,7 +208,40 @@ BEST PRACTICE WORKFLOW:
   },
   {
     name: 'smart_search',
-    description: 'Search for files by name pattern or content recursively',
+    description: `Search for files or content - Find before you read!
+
+🎯 STRATEGIC TOOL for token efficiency:
+- Find relevant files WITHOUT reading them all
+- Search file content to locate specific code
+- Get file paths for targeted reading
+
+SEARCH TYPES:
+1. 📄 'filename' - Find files by name
+   smart_search(pattern: "config", search_type: "filename")
+   → Finds: config.json, app.config.ts, etc.
+   → THEN read only the relevant one
+
+2. 🔍 'content' - Find code/text in files
+   smart_search(pattern: "async function login", search_type: "content")
+   → Shows which files contain this function
+   → THEN read only those files (with line ranges!)
+
+WHEN TO USE:
+- ✅ Before reading: Find which files to read
+- ✅ Locating specific functions/classes/config
+- ✅ Understanding where code lives
+- ✅ Avoiding blind file reading
+
+⚠️  WORKFLOW:
+1. smart_search to FIND relevant files
+2. read_file with preview_only to CHECK size
+3. read_file with line ranges to READ specific sections
+
+EXAMPLE:
+smart_search(pattern: "apiKey", search_type: "content")
+→ Found in: src/config.ts, .env.example
+→ read_file(path: "src/config.ts", search_term: "apiKey")
+→ Targeted read of only what you need!`,
     input_schema: {
       type: 'object',
       properties: {

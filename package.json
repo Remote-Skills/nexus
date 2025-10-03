@@ -1,6 +1,6 @@
 {
   "name": "nexus-agent",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Intelligent Agentic File Assistant powered by Claude - Works cross-platform out of the box",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

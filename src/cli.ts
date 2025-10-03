@@ -22,7 +22,7 @@ function printBanner() {
  ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
   `);
   
-  console.log(boxen(banner + '\n' + chalk.white('Intelligent Agentic File Assistant'), {
+  console.log(boxen(banner + '\n' + chalk.white('Intelligent Agentic Code Assistant'), {
     padding: 1,
     margin: 1,
     borderStyle: 'round',

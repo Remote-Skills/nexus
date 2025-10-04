@@ -247,7 +247,7 @@ MIT License - Feel free to use and modify!
 ## Links
 
 - [npm Package](https://www.npmjs.com/package/nexus-agent)
-- [GitHub Repository](https://github.com/Remote-Skills/nexus-npm)
+- [GitHub Repository](https://github.com/Remote-Skills/nexus)
 - [Anthropic Claude](https://www.anthropic.com/claude)
 
 ## Troubleshooting
@@ -292,7 +292,7 @@ export PATH=$PATH:~/.local/bin
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/Remote-Skills/nexus-npm/issues)
+- **Issues**: [GitHub Issues](https://github.com/Remote-Skills/nexus/issues)
 - **Email**: hi@remoteskills.io
 
 ---

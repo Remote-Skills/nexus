@@ -10,6 +10,15 @@ import { executeTool } from './tools/executor.js';
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
 const MAX_TOKENS = parseInt(process.env.ANTHROPIC_MAX_TOKENS || '4096');
 const MAX_ITERATIONS = 15;
+const MAX_CONTEXT_MESSAGES = 10; // Limit conversation history
+const MAX_TOOL_RESULT_LENGTH = 2000; // Truncate long tool results
+const ENABLE_TOKEN_OPTIMIZATION = process.env.NEXUS_OPTIMIZE_TOKENS !== 'false';
+
+// Cache for expensive operations
+let cachedSystemPrompt: string | null = null;
+let cachedCustomInstructions: string | null = null;
+let customInstructionsPath: string | null = null;
+let customInstructionsLastModified: number = 0;
 
 // Lazy client initialization
 let client: Anthropic;
@@ -121,10 +130,62 @@ async function getUserPlanApproval(plan: string): Promise<{ approved: boolean; f
 }
 
 /**
- * Check for CLAUDE.md or AGENTS.md in the current directory
- * and return its content if found
+ * Load custom instructions with caching and modification time checking
  */
 function loadCustomInstructions(): string | null {
+  if (!ENABLE_TOKEN_OPTIMIZATION) {
+    // Fallback to original behavior
+    return loadCustomInstructionsUncached();
+  }
+
+  const cwd = process.cwd();
+  const possibleFiles = ['CLAUDE.md', 'AGENTS.md'];
+
+  // Check if we need to reload
+  let needsReload = !cachedCustomInstructions;
+  let currentPath: string | null = null;
+  let currentModified = 0;
+
+  for (const filename of possibleFiles) {
+    const filePath = path.join(cwd, filename);
+    try {
+      if (fs.existsSync(filePath)) {
+        const stats = fs.statSync(filePath);
+        currentPath = filePath;
+        currentModified = stats.mtimeMs;
+        
+        if (customInstructionsPath !== filePath || customInstructionsLastModified < currentModified) {
+          needsReload = true;
+        }
+        break;
+      }
+    } catch (error) {
+      // Silently ignore errors
+    }
+  }
+
+  if (needsReload && currentPath) {
+    try {
+      const content = fs.readFileSync(currentPath, 'utf-8');
+      cachedCustomInstructions = content;
+      customInstructionsPath = currentPath;
+      customInstructionsLastModified = currentModified;
+      console.log(chalk.green(`📄 Loaded custom instructions from: ${path.basename(currentPath)}`));
+    } catch (error) {
+      cachedCustomInstructions = null;
+    }
+  } else if (!currentPath) {
+    cachedCustomInstructions = null;
+    customInstructionsPath = null;
+  }
+
+  return cachedCustomInstructions;
+}
+
+/**
+ * Original uncached version for fallback
+ */
+function loadCustomInstructionsUncached(): string | null {
   const cwd = process.cwd();
   const possibleFiles = ['CLAUDE.md', 'AGENTS.md'];
 
@@ -145,9 +206,14 @@ function loadCustomInstructions(): string | null {
 }
 
 /**
- * Build the system prompt, optionally including custom instructions
+ * Build the system prompt with caching optimization
  */
-function buildSystemPrompt(): string {
+function buildSystemPrompt(forceRebuild: boolean = false): string {
+  // Use cached version if available and not forced to rebuild
+  if (cachedSystemPrompt && !forceRebuild && ENABLE_TOKEN_OPTIMIZATION) {
+    return cachedSystemPrompt;
+  }
+
   const customInstructions = loadCustomInstructions();
 
   let systemPrompt = `You are Nexus, an intelligent agentic file assistant. You help users with file operations by planning and executing tasks step-by-step.
@@ -206,38 +272,126 @@ SAFETY:
 - Always get plan approval before tool execution
 - Ask for clarification if task is unclear`;
 
-  // Append custom instructions if found
+  // Append custom instructions if found (only if they're not too long)
   if (customInstructions) {
+    const maxCustomLength = 2000; // Limit custom instructions to 2000 chars
+    const truncatedInstructions = customInstructions.length > maxCustomLength 
+      ? customInstructions.substring(0, maxCustomLength) + '\n\n[...truncated for token efficiency]'
+      : customInstructions;
+
     systemPrompt += `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CUSTOM PROJECT INSTRUCTIONS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-${customInstructions}
+${truncatedInstructions}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Follow the custom project instructions above when working in this directory.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   }
 
+  // Cache the result
+  if (ENABLE_TOKEN_OPTIMIZATION) {
+    cachedSystemPrompt = systemPrompt;
+  }
+
   return systemPrompt;
+}
+
+/**
+ * Truncate tool results to save tokens while preserving essential information
+ */
+function truncateToolResult(result: string, toolName: string): string {
+  if (!ENABLE_TOKEN_OPTIMIZATION || result.length <= MAX_TOOL_RESULT_LENGTH) {
+    return result;
+  }
+
+  // Smart truncation based on tool type
+  switch (toolName) {
+    case 'list_files':
+      // Keep directory structure but limit file list
+      const lines = result.split('\n');
+      if (lines.length > 50) {
+        return lines.slice(0, 30).join('\n') + 
+          `\n\n... [${lines.length - 30} more files truncated for token efficiency] ...\n\n` +
+          lines.slice(-10).join('\n');
+      }
+      break;
+    
+    case 'read_file':
+      // Truncate from middle, keep beginning and end
+      const halfLength = Math.floor(MAX_TOOL_RESULT_LENGTH / 2);
+      return result.substring(0, halfLength) + 
+        `\n\n... [${result.length - MAX_TOOL_RESULT_LENGTH} characters truncated for token efficiency] ...\n\n` +
+        result.substring(result.length - halfLength);
+    
+    case 'smart_search':
+      // Keep first few results
+      const searchLines = result.split('\n');
+      if (searchLines.length > 20) {
+        return searchLines.slice(0, 20).join('\n') + 
+          `\n... [${searchLines.length - 20} more search results truncated] ...`;
+      }
+      break;
+    
+    case 'run_command':
+      // Keep important parts of command output
+      if (result.includes('ERROR') || result.includes('error')) {
+        // Keep full error output
+        return result;
+      }
+      // Truncate long successful output
+      return result.substring(0, MAX_TOOL_RESULT_LENGTH) + 
+        `\n\n... [output truncated for token efficiency] ...`;
+    
+    default:
+      // Generic truncation
+      return result.substring(0, MAX_TOOL_RESULT_LENGTH) + 
+        `\n\n... [truncated for token efficiency] ...`;
+  }
+
+  return result;
+}
+
+/**
+ * Trim conversation history to maintain context while saving tokens
+ */
+function trimConversationHistory(messages: Message[]): Message[] {
+  if (!ENABLE_TOKEN_OPTIMIZATION || messages.length <= MAX_CONTEXT_MESSAGES) {
+    return messages;
+  }
+
+  // Always keep the first message (user's original request)
+  const firstMessage = messages[0];
+  const recentMessages = messages.slice(-MAX_CONTEXT_MESSAGES + 1);
+  
+  // Add a summary message about truncation
+  const summaryMessage: Message = {
+    role: 'user',
+    content: '[Previous conversation history truncated for token efficiency. Context preserved.]'
+  };
+
+  return [firstMessage, summaryMessage, ...recentMessages];
 }
 
 export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
   const messages: Message[] = [
     { role: 'user', content: userMessage }
   ];
-
+  
   let iterationCount = 0;
   let actionCount = 0;
   let planApproved = false;
+  let estimatedTokens = 0;
   const spinner = ora();
-
+  
   console.log(chalk.cyan('🎯 TASK:'), chalk.white(userMessage));
-  console.log('');
-
-  while (iterationCount < MAX_ITERATIONS) {
+  if (ENABLE_TOKEN_OPTIMIZATION) {
+    console.log(chalk.gray('💰 Token optimization: ENABLED'));
+  }
+  console.log('');  while (iterationCount < MAX_ITERATIONS) {
     iterationCount++;
 
     try {
@@ -248,11 +402,20 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
       }
 
       const apiClient = getClient();
+      
+      // Optimize messages for token efficiency
+      const optimizedMessages = ENABLE_TOKEN_OPTIMIZATION 
+        ? trimConversationHistory(messages)
+        : messages;
+      
+      // Build system prompt (cached after first call)
+      const systemPrompt = buildSystemPrompt();
+      
       const response = await apiClient.messages.create({
         model: MODEL,
         max_tokens: MAX_TOKENS,
-        system: buildSystemPrompt(),
-        messages: messages as any,
+        system: systemPrompt,
+        messages: optimizedMessages as any,
         tools: planApproved ? tools as any : [], // Only provide tools after plan approval
       });
 
@@ -339,6 +502,9 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         console.log(chalk.green('✅ COMPLETED'));
         console.log(chalk.gray(`Total iterations: ${iterationCount}`));
         console.log(chalk.gray(`Actions performed: ${actionCount}`));
+        if (ENABLE_TOKEN_OPTIMIZATION) {
+          console.log(chalk.gray('💰 Token optimizations applied: message trimming, result truncation, prompt caching'));
+        }
         break;
       } else if (toolUseBlocks.length === 0 && !planApproved) {
         // No tools and no plan yet, continue to get plan
@@ -375,14 +541,21 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         try {
           const result = await executeTool(toolName, toolInput);
           spinner2.succeed(chalk.green(`${toolName} completed`));
-
-          console.log(chalk.cyan('Result:'), chalk.white(result.substring(0, 500) + (result.length > 500 ? '...' : '')));
+          
+          // Truncate result for token efficiency
+          const truncatedResult = truncateToolResult(result, toolName);
+          const displayResult = truncatedResult.substring(0, 500) + (truncatedResult.length > 500 ? '...' : '');
+          
+          console.log(chalk.cyan('Result:'), chalk.white(displayResult));
+          if (ENABLE_TOKEN_OPTIMIZATION && result.length > MAX_TOOL_RESULT_LENGTH) {
+            console.log(chalk.gray(`💰 Result truncated: ${result.length} → ${truncatedResult.length} chars (${Math.round((1 - truncatedResult.length / result.length) * 100)}% saved)`));
+          }
           console.log('');
-
+          
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolId,
-            content: result
+            content: truncatedResult // Use truncated result for API
           });
         } catch (error: any) {
           spinner2.fail(chalk.red(`${toolName} failed`));

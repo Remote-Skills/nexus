@@ -21,7 +21,7 @@ function printBanner() {
  ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║
  ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
   `);
-  
+
   console.log(boxen(banner + '\n' + chalk.white('Intelligent Agentic Code Assistant'), {
     padding: 1,
     margin: 1,
@@ -35,7 +35,7 @@ function printConfigInfo() {
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
   const maxTokens = process.env.ANTHROPIC_MAX_TOKENS || '4096';
   const tokenOptimization = process.env.NEXUS_OPTIMIZE_TOKENS !== 'false';
-  
+
   console.log(chalk.cyan('⚙️  Configuration'));
   console.log(chalk.gray(`   Model: ${model}`));
   console.log(chalk.gray(`   Max Tokens: ${maxTokens}`));
@@ -48,21 +48,21 @@ function printConfigInfo() {
 async function interactiveMode() {
   printBanner();
   printConfigInfo();
-  
+
   console.log(chalk.gray('Type your task or "exit" to quit\n'));
-  
+
   while (true) {
     const response = await prompts({
       type: 'text',
       name: 'task',
       message: chalk.cyan('Task:'),
     });
-    
+
     if (!response.task || response.task.toLowerCase() === 'exit') {
       console.log(chalk.yellow('\nGoodbye! 👋'));
       process.exit(0);
     }
-    
+
     console.log('');
     await chatWithToolsAgentic(response.task);
     console.log('');
@@ -83,42 +83,42 @@ program
     if (options.apiKey) {
       process.env.ANTHROPIC_API_KEY = options.apiKey;
     }
-    
+
     if (options.model) {
       process.env.ANTHROPIC_MODEL = options.model;
     }
-    
+
     // Check API key
     if (!process.env.ANTHROPIC_API_KEY) {
       printBanner();
       console.error(chalk.red.bold('\n❌ API Key Not Found\n'));
       console.log(chalk.yellow('Nexus requires an Anthropic API key to function.\n'));
-      
+
       console.log(chalk.cyan.bold('🔑 Setup Options:\n'));
-      
+
       console.log(chalk.white('1️⃣  Create a ') + chalk.green('.env') + chalk.white(' file in your project:'));
       console.log(chalk.gray('   echo "ANTHROPIC_API_KEY=sk-ant-your-key-here" > .env\n'));
-      
+
       console.log(chalk.white('2️⃣  Pass it as a command-line argument:'));
       console.log(chalk.gray('   nexus --api-key sk-ant-your-key-here "your task"\n'));
-      
+
       console.log(chalk.white('3️⃣  Set as an environment variable:'));
       console.log(chalk.gray('   # Windows (PowerShell):'));
       console.log(chalk.gray('   $env:ANTHROPIC_API_KEY="sk-ant-your-key-here"\n'));
       console.log(chalk.gray('   # Linux/Mac:'));
       console.log(chalk.gray('   export ANTHROPIC_API_KEY="sk-ant-your-key-here"\n'));
-      
+
       console.log(chalk.cyan('📖 Get your API key from: ') + chalk.blue.underline('https://console.anthropic.com/'));
       console.log(chalk.gray('\nFor more help, visit: ') + chalk.blue('https://github.com/remoteskills/nexus\n'));
       process.exit(1);
     }
-    
+
     // Interactive mode
     if (options.interactive || taskArgs.length === 0) {
       await interactiveMode();
       return;
     }
-    
+
     // Single task mode
     const task = taskArgs.join(' ');
     printBanner();

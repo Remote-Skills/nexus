@@ -47,6 +47,48 @@ function formatTokenUsage(): string {
   return `${total.toLocaleString()} tokens (~$${cost.toFixed(4)})`;
 }
 
+/**
+ * Analyze task complexity to determine appropriate planning level
+ */
+function analyzeTaskComplexity(task: string): 'simple' | 'medium' | 'complex' {
+  const lowerTask = task.toLowerCase();
+  
+  // Simple tasks: basic file operations with clear intent
+  const simplePatterns = [
+    /delete (all )?files?( in (this|current) folder)?/,
+    /remove (all )?files?( in (this|current) folder)?/,
+    /delete \w+\.(\w+)$/,
+    /remove \w+\.(\w+)$/,
+    /rename \w+ to \w+/,
+    /move \w+ to \w+/,
+    /copy \w+ to \w+/,
+    /list files?( in (this|current) folder)?/,
+    /show files?( in (this|current) folder)?/
+  ];
+  
+  // Complex tasks: multi-step, creative, or analytical work
+  const complexPatterns = [
+    /create .+ (project|application|website|app)/,
+    /build .+ (system|architecture|framework)/,
+    /analyze .+ (code|structure|pattern)/,
+    /refactor .+ (code|functions|classes)/,
+    /implement .+ (feature|functionality|algorithm)/,
+    /design .+ (component|module|interface)/,
+    /(write|create) .+ (template|email|document) .+ (aesthetic|design|style)/
+  ];
+  
+  if (simplePatterns.some(pattern => pattern.test(lowerTask))) {
+    return 'simple';
+  }
+  
+  if (complexPatterns.some(pattern => pattern.test(lowerTask))) {
+    return 'complex';
+  }
+  
+  // Medium complexity for everything else
+  return 'medium';
+}
+
 // Cache for expensive operations
 let cachedSystemPrompt: string | null = null;
 let cachedCustomInstructions: string | null = null;
@@ -241,76 +283,51 @@ function loadCustomInstructionsUncached(): string | null {
 /**
  * Build the system prompt with caching optimization
  */
-function buildSystemPrompt(forceRebuild: boolean = false): string {
+function buildSystemPrompt(forceRebuild: boolean = false, taskComplexity: 'simple' | 'medium' | 'complex' = 'medium'): string {
   // Use cached version if available and not forced to rebuild
-  if (cachedSystemPrompt && !forceRebuild && ENABLE_TOKEN_OPTIMIZATION) {
+  if (cachedSystemPrompt && !forceRebuild && ENABLE_TOKEN_OPTIMIZATION && taskComplexity === 'medium') {
     return cachedSystemPrompt;
   }
 
   const customInstructions = loadCustomInstructions();
+  let systemPrompt = '';
+  
+  if (taskComplexity === 'simple') {
+    systemPrompt = `You are Nexus, an efficient file assistant. For simple tasks, work directly.
 
-  let systemPrompt = `You are Nexus, an intelligent agentic file assistant. You help users with file operations by planning and executing tasks step-by-step.
+🎯 SIMPLE MODE: Skip planning, use tools immediately for obvious operations.
+- Show progress: "📄 Working..." → "✓ Done"
+- Be concise but informative
 
-CRITICAL INSTRUCTIONS:
-1. ALWAYS create a detailed plan BEFORE taking any action
-2. Present your plan clearly and wait for user approval
-3. ONLY start using tools after the user approves the plan
-4. AFTER plan approval: Execute the plan step-by-step using tools
-5. Be token-conscious: use smart_search and list_files before reading large files
+TOOLS: list_files, create_file, edit_file, delete_file, smart_search, smart_replace, run_command`;
+    
+  } else if (taskComplexity === 'complex') {
+    systemPrompt = `You are Nexus, an intelligent agentic file assistant for complex tasks.
 
-PLANNING PHASE REQUIREMENTS:
-- Start with "📋 PLAN:" followed by numbered steps
-- Be specific about which files to read/edit/create
-- Mention token-saving strategies (search before read, line ranges, etc.)
-- Include verification steps
-- End with "Waiting for user approval before execution..."
+CRITICAL: 
+1. Create detailed plan FIRST
+2. Get user approval 
+3. THEN execute with tools
+4. Be token-efficient
 
-EXECUTION PHASE (after plan approval):
-- DO NOT create another plan
-- Start executing the approved plan immediately using tools
-- Work through each step systematically
-- Use the tools to accomplish the task
+PLANNING: Start with "📋 PLAN:" → numbered steps → "Waiting for approval..."
+EXECUTION: After approval, execute systematically
+NO TOOLS until plan approved!
 
-DO NOT USE ANY TOOLS until the user approves your plan!
-AFTER plan approval: USE TOOLS to execute the plan!
+TOOLS: list_files, smart_search, read_file (strategic use), create_file, edit_file, delete_file, smart_replace, run_command
+SAFETY: Max ${MAX_ITERATIONS} iterations`;
+    
+  } else {
+    systemPrompt = `You are Nexus, an intelligent file assistant with adaptive complexity.
 
-⚠️  TOKEN EFFICIENCY IS CRITICAL:
-- Reading files costs tokens - be strategic!
-- NEVER read entire large files blindly
-- ALWAYS use smart_search or preview_only FIRST to understand structure
-- Only read specific sections you actually need
-- Use line ranges for targeted reading
-- The user is paying per token - respect their budget!
+APPROACH:
+- Simple tasks: Work directly 
+- Complex tasks: Plan → approve → execute
+- Always be efficient
 
-AVAILABLE TOOLS:
-- list_files: List directory contents (use FIRST to understand structure)
-- smart_search: Search for files or content (use to FIND what you need)
-- read_file: Read file contents (STRATEGIC use only - supports preview, line ranges, search)
-- create_file: Create new files with content
-- edit_file: Edit existing files (replace or append)
-- delete_file: Delete files
-- run_command: Execute shell commands with timeout protection
-
-STRATEGIC READING APPROACH:
-📊 Step 1: EXPLORE (low cost)
-   - Use list_files to see project structure
-   - Use smart_search to find relevant files
-   - Use read_file with preview_only=true to check file size/type
-
-🎯 Step 2: TARGET (medium cost)
-   - Use read_file with search_term to find specific code
-   - Use line ranges (start_line/end_line) to read only relevant sections
-   - Read configuration files fully (usually small)
-
-📖 Step 3: DEEP READ (high cost - use sparingly)
-   - Only read large files if absolutely necessary
-   - Read implementation files in chunks using line ranges
-   - Never read minified files, node_modules, or build output
-
-SAFETY:
-- Maximum of ${MAX_ITERATIONS} iterations total
-- Always get plan approval before tool execution
-- Ask for clarification if task is unclear`;
+TOOLS: list_files, smart_search, read_file, create_file, edit_file, delete_file, smart_replace, run_command
+SAFETY: Max ${MAX_ITERATIONS} iterations`;
+  }
 
   // Append custom instructions if found (only if they're not too long)
   if (customInstructions) {
@@ -485,17 +502,24 @@ function trimConversationHistory(messages: Message[]): Message[] {
 }
 
 export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
+  // Analyze task complexity to determine approach
+  const taskComplexity = analyzeTaskComplexity(userMessage);
+  
   const messages: Message[] = [
     { role: 'user', content: userMessage }
   ];
   
   let iterationCount = 0;
   let actionCount = 0;
-  let planApproved = false;
+  let planApproved = taskComplexity === 'simple'; // Skip planning for simple tasks
   let estimatedTokens = 0;
   const spinner = ora();
   
   console.log(chalk.cyan('🎯 TASK:'), chalk.white(userMessage));
+  console.log(chalk.gray(`🧠 Complexity: ${taskComplexity.toUpperCase()}`));
+  if (taskComplexity === 'simple') {
+    console.log(chalk.gray('⚡ Skipping plan approval for simple task'));
+  }
   console.log(chalk.gray(`💰 Session tokens: ${formatTokenUsage()}`));
   console.log('');  while (iterationCount < MAX_ITERATIONS) {
     iterationCount++;
@@ -522,8 +546,8 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         optimizedMessages.splice(0, optimizedMessages.length, ...resetMessages);
       }
       
-      // Build system prompt (cached after first call)
-      const systemPrompt = buildSystemPrompt();
+      // Build system prompt with task complexity
+      const systemPrompt = buildSystemPrompt(false, taskComplexity);
       
       // Estimate input tokens for tracking
       const inputText = systemPrompt + JSON.stringify(optimizedMessages);
@@ -764,4 +788,39 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
   if (iterationCount >= MAX_ITERATIONS) {
     console.log(chalk.yellow(`⚠️  Reached maximum iterations (${MAX_ITERATIONS})`));
   }
+}
+
+/**
+ * Low-token mode for simple tasks (delete, move, rename, etc.)
+ * Directly executes tool calls with minimal planning and context
+ */
+export async function runLowTokenTask(task: string): Promise<void> {
+  // Detect delete all files task
+  if (/delete all files? in this folder/i.test(task)) {
+    const cwd = process.cwd();
+    const files = fs.readdirSync(cwd).filter(f => !f.startsWith('.') && f !== 'node_modules');
+    if (files.length === 0) {
+      console.log(chalk.yellow('No files to delete.'));
+      return;
+    }
+    console.log(chalk.cyan('Deleting files:'), files.join(', '));
+    let deleted = 0;
+    for (const file of files) {
+      try {
+        await executeTool('delete_file', { path: path.join(cwd, file) });
+        console.log(chalk.green(`✓ Deleted ${file}`));
+        deleted++;
+      } catch (err: any) {
+        console.log(chalk.red(`Failed to delete ${file}: ${err.message}`));
+      }
+    }
+    console.log(chalk.green(`Done. Deleted ${deleted} files.`));
+    // Estimate and show token usage (minimal)
+    const usage = formatTokenUsage();
+    console.log(chalk.gray(`💰 Token usage: ${usage}`));
+    return;
+  }
+  // ...add more low-token patterns here...
+  // Fallback to normal agent if not a simple task
+  return await chatWithToolsAgentic(task);
 }

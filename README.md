@@ -93,10 +93,10 @@ export NEXUS_OPTIMIZE_TOKENS=false  # Disable optimizations for full verbosity
 ```
 
 **Token Savings:**
-- 🔄 Cached system prompts save ~1000 tokens per API call
-- ✂️ Conversation trimming saves ~500-2000 tokens per long session  
-- 📦 Result truncation saves ~1000-5000 tokens per large file operation
-- 📄 Custom instruction limits prevent excessive prompt tokens
+- Cached system prompts save ~1000 tokens per API call
+- Conversation trimming saves ~500-2000 tokens per long session  
+- Result truncation saves ~1000-5000 tokens per large file operation
+- Custom instruction limits prevent excessive prompt tokens
 
 Total savings: **30-60% reduction in token usage** for typical workflows!
 
@@ -235,16 +235,6 @@ nexus "Replace the API_URL constant with environment-based configuration"
 | `smart_search` | Search by filename or content recursively |
 | `run_command` | Execute shell commands with timeout protection (30s default, max 300s) |
 
-## Why npm instead of pip?
-
-**Cross-Platform Compatibility**: npm packages work identically on Windows, Mac, and Linux without PATH issues.
-
-**Instant Availability**: Use `npx nexus-agent` anywhere without installation.
-
-**Better Bin Scripts**: npm automatically handles executable scripts cross-platform.
-
-**Modern Tooling**: TypeScript provides better type safety and developer experience.
-
 ## Development
 
 ```bash
@@ -339,7 +329,7 @@ npm install -g nexus-agent --prefix ~/.local
 export PATH=$PATH:~/.local/bin
 ```
 
-## Smart Replace Feature 🧠
+## Smart Replace Feature
 
 The `smart_replace` tool provides semantic code block replacement, going beyond simple text replacement to understand code structure:
 

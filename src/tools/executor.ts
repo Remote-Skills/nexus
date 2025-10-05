@@ -90,6 +90,14 @@ export async function executeTool(name: string, input: any): Promise<string> {
       if (!input.command) {
         throw new Error('run_command requires "command" parameter');
       }
+      // Validate timeout bounds
+      if (input.timeout_seconds && (input.timeout_seconds < 1 || input.timeout_seconds > 600)) {
+        throw new Error('run_command timeout_seconds must be between 1 and 600 seconds');
+      }
+      // Validate max output chars
+      if (input.max_output_chars && input.max_output_chars < 100) {
+        throw new Error('run_command max_output_chars must be at least 100');
+      }
       return await runCommand(input);
     
     default:

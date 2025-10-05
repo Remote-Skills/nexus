@@ -350,7 +350,38 @@ smart_replace(
   },
   {
     name: 'run_command',
-    description: 'Execute a shell command and return its output. Includes timeout protection to prevent hanging. Use for: running tests, checking versions, installing packages, building projects, git operations, etc.',
+    description: `Execute shell commands with comprehensive safety and output management.
+
+🛡️ SAFETY FEATURES:
+- Automatic risk assessment and approval prompts for dangerous commands
+- Timeout protection to prevent hanging processes
+- Smart output handling for large results
+- Working directory validation
+
+⚠️ HIGH-RISK COMMANDS (require explicit approval):
+- Destructive operations: rm, del, format, rmdir
+- System modifications: chmod, chown, sudo, su
+- Network operations: curl, wget, ssh, scp
+- Package installations: npm install, pip install, apt install
+- Git operations affecting remote: git push, git force-push
+
+✅ SAFE COMMANDS (auto-approved):
+- Information gathering: ls, dir, git status, npm list
+- Version checks: node --version, python --version
+- Build operations: npm run build, npm test
+- Local git operations: git add, git commit
+
+📊 SMART OUTPUT HANDLING:
+- Large outputs show last 50 lines (most relevant)
+- Error outputs preserved in full
+- Structured formatting for readability
+- Token-efficient truncation
+
+BEST PRACTICES:
+- Use 'approve_risky: true' for dangerous commands you've reviewed
+- Specify working_directory for context
+- Set appropriate timeouts for long operations
+- Use 'show_full_output: true' only when necessary`,
     input_schema: {
       type: 'object',
       properties: {
@@ -369,6 +400,14 @@ smart_replace(
         max_output_chars: {
           type: 'number',
           description: 'Maximum characters of output to return (default: 10000)'
+        },
+        approve_risky: {
+          type: 'boolean',
+          description: 'Set to true to bypass approval prompt for risky commands (use only after manual review)'
+        },
+        show_full_output: {
+          type: 'boolean',
+          description: 'Set to true to show full output instead of smart truncation (use sparingly for token efficiency)'
         }
       },
       required: ['command']

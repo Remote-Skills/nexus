@@ -5,6 +5,136 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+// Risk assessment for commands
+const HIGH_RISK_PATTERNS = [
+  // Destructive operations
+  /^(rm|del|rmdir|rd)\s/i,
+  /^format\s/i,
+  /--force/i,
+  /--hard/i,
+  
+  // System modifications  
+  /^(chmod|chown|sudo|su)\s/i,
+  /^(systemctl|service)\s/i,
+  
+  // Network operations
+  /^(curl|wget|ssh|scp|rsync)\s/i,
+  
+  // Package installations
+  /^(npm\s+(install|i)|pip\s+install|apt\s+(install|remove)|yum\s+(install|remove))/i,
+  
+  // Git operations affecting remote
+  /git\s+(push|force-push)/i,
+  /git\s+push.*--force/i,
+  
+  // Database operations
+  /^(mysql|psql|mongo)\s/i,
+  /drop\s+(table|database)/i,
+  
+  // Docker operations
+  /^docker\s+(run|exec|rm|rmi)/i,
+  /^docker-compose\s+(up|down)/i
+];
+
+const MEDIUM_RISK_PATTERNS = [
+  // Package management (safe operations)
+  /^npm\s+(run|test|build|start)/i,
+  /^pip\s+(list|show|freeze)/i,
+  
+  // Git operations (local)
+  /^git\s+(add|commit|checkout|branch|merge)/i,
+  
+  // File operations (non-destructive)
+  /^(mkdir|touch|cp|copy|mv|move)\s/i
+];
+
+function assessCommandRisk(command: string): 'low' | 'medium' | 'high' {
+  const cmd = command.trim();
+  
+  // Check for high-risk patterns
+  for (const pattern of HIGH_RISK_PATTERNS) {
+    if (pattern.test(cmd)) {
+      return 'high';
+    }
+  }
+  
+  // Check for medium-risk patterns
+  for (const pattern of MEDIUM_RISK_PATTERNS) {
+    if (pattern.test(cmd)) {
+      return 'medium';
+    }
+  }
+  
+  return 'low';
+}
+
+function getRiskDescription(command: string): string {
+  const cmd = command.toLowerCase();
+  
+  if (cmd.includes('rm ') || cmd.includes('del ')) {
+    return '- Delete files or directories permanently\n- Data loss if used incorrectly';
+  }
+  if (cmd.includes('chmod') || cmd.includes('chown')) {
+    return '- Modify file permissions or ownership\n- Could affect system security';
+  }
+  if (cmd.includes('sudo') || cmd.includes('su ')) {
+    return '- Execute with elevated privileges\n- Full system access';
+  }
+  if (cmd.includes('curl') || cmd.includes('wget')) {
+    return '- Download files from the internet\n- Potential security risks from external sources';
+  }
+  if (cmd.includes('install')) {
+    return '- Install new packages or software\n- Could modify system or introduce vulnerabilities';
+  }
+  if (cmd.includes('git push')) {
+    return '- Push changes to remote repository\n- Could overwrite or affect shared code';
+  }
+  if (cmd.includes('format')) {
+    return '- Format drives or partitions\n- Complete data loss on target';
+  }
+  
+  return '- Potentially dangerous operation\n- Review command carefully before approval';
+}
+
+function formatCommandOutput(stdout: string, stderr: string, showFull: boolean, maxChars: number): string {
+  let output = '';
+  
+  // Add stdout if present
+  if (stdout && stdout.trim()) {
+    if (showFull || stdout.length <= maxChars / 2) {
+      output += `📤 OUTPUT:\n${stdout}\n`;
+    } else {
+      // Show last 50 lines for large outputs
+      const lines = stdout.split('\n');
+      if (lines.length > 50) {
+        const lastLines = lines.slice(-50);
+        output += `📤 OUTPUT (last 50 lines of ${lines.length}):\n${lastLines.join('\n')}\n`;
+      } else {
+        output += `📤 OUTPUT:\n${stdout}\n`;
+      }
+    }
+  }
+  
+  // Add stderr if present (always show full stderr for debugging)
+  if (stderr && stderr.trim()) {
+    output += `⚠️ STDERR:\n${stderr}\n`;
+  }
+  
+  // Final truncation if still too long
+  if (!showFull && output.length > maxChars) {
+    const truncated = output.substring(0, maxChars);
+    const lastNewline = truncated.lastIndexOf('\n');
+    if (lastNewline > maxChars * 0.8) {
+      output = truncated.substring(0, lastNewline) + 
+        `\n\n📝 Output truncated (${output.length} chars total, showing ${lastNewline})`;
+    } else {
+      output = truncated + `\n\n📝 Output truncated (${output.length} chars total)`;
+    }
+  }
+  
+  return output;
+}
+
 const EXCLUDED_DIRS = new Set([
   'node_modules', '.git', '.svn', '__pycache__', '.venv', 'venv', 'env',
   'dist', 'build', '.next', '.nuxt', '.cache', '.parcel-cache', 'coverage',
@@ -231,11 +361,32 @@ export async function runCommand(args: {
   working_directory?: string;
   timeout_seconds?: number;
   max_output_chars?: number;
+  approve_risky?: boolean;
+  show_full_output?: boolean;
 }): Promise<string> {
   try {
     const timeout = (args.timeout_seconds || 30) * 1000; // Default 30 seconds
     const maxOutputChars = args.max_output_chars || 10000;
     const cwd = args.working_directory || process.cwd();
+    
+    // Risk assessment
+    const riskLevel = assessCommandRisk(args.command);
+    if (riskLevel === 'high' && !args.approve_risky) {
+      return `⚠️ HIGH-RISK COMMAND DETECTED: "${args.command}"
+
+This command could potentially:
+${getRiskDescription(args.command)}
+
+To execute this command, you must explicitly approve it by adding 'approve_risky: true' to the command parameters.
+
+Example:
+{
+  "command": "${args.command}",
+  "approve_risky": true
+}
+
+Only approve if you have reviewed the command and understand the risks.`;
+    }
     
     // Create timeout promise
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -254,30 +405,26 @@ export async function runCommand(args: {
     
     const result = await Promise.race([execPromise, timeoutPromise]);
     
-    // Combine stdout and stderr
-    let output = '';
-    if (result.stdout) output += `STDOUT:\n${result.stdout}\n`;
-    if (result.stderr) output += `STDERR:\n${result.stderr}\n`;
+    // Format output with better structure
+    let output = formatCommandOutput(result.stdout, result.stderr, args.show_full_output || false, maxOutputChars);
     
     if (!output) {
-      output = 'Command executed successfully with no output.';
+      output = '✅ Command executed successfully with no output.';
     }
     
-    // Truncate if too long
-    if (output.length > maxOutputChars) {
-      output = output.substring(0, maxOutputChars) + 
-        `\n\n... (output truncated, showed ${maxOutputChars} of ${output.length} characters)`;
-    }
-    
-    return `Command: ${args.command}\nWorking Directory: ${cwd}\n\n${output}`;
+    return `🔧 Command: ${args.command}
+📁 Working Directory: ${cwd}
+${riskLevel === 'high' ? '⚠️ Risk Level: HIGH (approved)\n' : ''}⏱️ Timeout: ${args.timeout_seconds || 30}s
+
+${output}`;
     
   } catch (error: any) {
     // Handle command execution errors
     if (error.killed) {
-      throw new Error(`Command was killed (timeout: ${args.timeout_seconds || 30}s)`);
+      throw new Error(`⏰ Command was killed (timeout: ${args.timeout_seconds || 30}s)`);
     }
     
-    let errorMsg = `Command failed: ${args.command}\n`;
+    let errorMsg = `❌ Command failed: ${args.command}\n`;
     
     if (error.stdout) errorMsg += `\nSTDOUT:\n${error.stdout}`;
     if (error.stderr) errorMsg += `\nSTDERR:\n${error.stderr}`;

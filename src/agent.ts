@@ -486,14 +486,39 @@ function truncateToolResult(result: string, toolName: string): string {
       break;
     
     case 'run_command':
-      // Keep important parts of command output
-      if (result.includes('ERROR') || result.includes('error')) {
-        // Keep full error output
+      // Enhanced handling for run_command output
+      if (result.includes('HIGH-RISK COMMAND DETECTED')) {
+        // Always show risk warnings in full
         return result;
       }
-      // Truncate long successful output
-      return result.substring(0, MAX_TOOL_RESULT_LENGTH) + 
-        `\n\n... [output truncated for token efficiency] ...`;
+      if (result.includes('❌ Command failed') || result.includes('ERROR') || result.includes('error')) {
+        // Keep full error output for debugging
+        return result;
+      }
+      if (result.includes('📝 Output truncated')) {
+        // Already smartly truncated by the tool
+        return result;
+      }
+      // For large successful outputs, apply additional token-conscious truncation
+      if (result.length > MAX_TOOL_RESULT_LENGTH) {
+        const lines = result.split('\n');
+        const headerLines = lines.slice(0, 5); // Keep command info
+        const outputStart = lines.findIndex(line => line.includes('📤 OUTPUT'));
+        if (outputStart > -1) {
+          // Keep header + first and last few lines of output
+          const outputLines = lines.slice(outputStart);
+          if (outputLines.length > 20) {
+            const firstOutputLines = outputLines.slice(0, 10);
+            const lastOutputLines = outputLines.slice(-10);
+            return [...headerLines, ...firstOutputLines, 
+              '... [middle output truncated for token efficiency] ...', 
+              ...lastOutputLines].join('\n');
+          }
+        }
+        return result.substring(0, MAX_TOOL_RESULT_LENGTH) + 
+          `\n\n... [output truncated for token efficiency] ...`;
+      }
+      break;
     
     default:
       // Generic truncation

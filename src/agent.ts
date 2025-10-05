@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import fs from 'fs';
 import path from 'path';
+import prompts from 'prompts';
 import { tools } from './tools/index.js';
 import { executeTool } from './tools/executor.js';
 
@@ -30,13 +31,103 @@ interface Message {
 }
 
 /**
+ * Extract plan from agent response text
+ */
+function extractPlan(text: string): string | null {
+  // Look for plan markers
+  const planMarkers = [
+    /📋\s*PLAN[:\s]*([\s\S]*?)(?=\n\n|Now executing|$)/i,
+    /PLAN[:\s]*([\s\S]*?)(?=\n\n|Now executing|$)/i,
+    /\d+\.\s+[^\n]+(?:\n\d+\.\s+[^\n]+)*/g
+  ];
+
+  for (const marker of planMarkers) {
+    const match = text.match(marker);
+    if (match) {
+      return match[1] || match[0];
+    }
+  }
+
+  // If no explicit plan found, look for numbered lists
+  const numberedList = text.match(/\d+\.\s+[^\n]+(?:\n\d+\.\s+[^\n]+)*/g);
+  if (numberedList && numberedList[0]) {
+    return numberedList[0];
+  }
+
+  return null;
+}
+
+/**
+ * Get user approval for the plan
+ */
+async function getUserPlanApproval(plan: string): Promise<{ approved: boolean; feedback?: string; newPlan?: string }> {
+  console.log('');
+  console.log(chalk.blue('📋 PROPOSED PLAN:'));
+  console.log(chalk.white(plan));
+  console.log('');
+
+  const response = await prompts({
+    type: 'select',
+    name: 'action',
+    message: 'What would you like to do with this plan?',
+    choices: [
+      { title: '✅ Approve and execute', value: 'approve' },
+      { title: '✏️  Provide feedback for adjustment', value: 'feedback' },
+      { title: '📝 Provide a different plan', value: 'replace' },
+      { title: '❌ Cancel', value: 'cancel' }
+    ],
+    initial: 0
+  });
+
+  if (!response.action || response.action === 'cancel') {
+    return { approved: false };
+  }
+
+  if (response.action === 'approve') {
+    return { approved: true };
+  }
+
+  if (response.action === 'feedback') {
+    const feedback = await prompts({
+      type: 'text',
+      name: 'feedback',
+      message: 'What adjustments would you like to the plan?',
+      validate: value => value.length > 0 ? true : 'Please provide feedback'
+    });
+
+    if (!feedback.feedback) {
+      return { approved: false };
+    }
+
+    return { approved: false, feedback: feedback.feedback };
+  }
+
+  if (response.action === 'replace') {
+    const newPlan = await prompts({
+      type: 'text',
+      name: 'plan',
+      message: 'Enter your preferred plan (use numbered steps):',
+      validate: value => value.length > 0 ? true : 'Please provide a plan'
+    });
+
+    if (!newPlan.plan) {
+      return { approved: false };
+    }
+
+    return { approved: true, newPlan: newPlan.plan };
+  }
+
+  return { approved: false };
+}
+
+/**
  * Check for CLAUDE.md or AGENTS.md in the current directory
  * and return its content if found
  */
 function loadCustomInstructions(): string | null {
   const cwd = process.cwd();
   const possibleFiles = ['CLAUDE.md', 'AGENTS.md'];
-  
+
   for (const filename of possibleFiles) {
     const filePath = path.join(cwd, filename);
     try {
@@ -49,7 +140,7 @@ function loadCustomInstructions(): string | null {
       // Silently ignore read errors
     }
   }
-  
+
   return null;
 }
 
@@ -58,16 +149,24 @@ function loadCustomInstructions(): string | null {
  */
 function buildSystemPrompt(): string {
   const customInstructions = loadCustomInstructions();
-  
+
   let systemPrompt = `You are Nexus, an intelligent agentic file assistant. You help users with file operations by planning and executing tasks step-by-step.
 
 CRITICAL INSTRUCTIONS:
-1. ALWAYS create a detailed TODO list/plan BEFORE taking any action
-2. Show your plan to the user with clear steps
-3. Execute each step methodically
-4. Check results after each action
-5. Adapt your plan if something fails
-6. Provide a final summary when complete
+1. ALWAYS create a detailed plan BEFORE taking any action
+2. Present your plan clearly and wait for user approval
+3. ONLY start using tools after the user approves the plan
+4. If the user requests changes, revise the plan accordingly
+5. Be token-conscious: use smart_search and list_files before reading large files
+
+PLANNING PHASE REQUIREMENTS:
+- Start with "📋 PLAN:" followed by numbered steps
+- Be specific about which files to read/edit/create
+- Mention token-saving strategies (search before read, line ranges, etc.)
+- Include verification steps
+- End with "Waiting for user approval before execution..."
+
+DO NOT USE ANY TOOLS until the user approves your plan!
 
 ⚠️  TOKEN EFFICIENCY IS CRITICAL:
 - Reading files costs tokens - be strategic!
@@ -102,38 +201,9 @@ STRATEGIC READING APPROACH:
    - Read implementation files in chunks using line ranges
    - Never read minified files, node_modules, or build output
 
-PLANNING FORMAT:
-When you receive a task, first respond with:
-"📋 PLAN:
-1. [First step - exploration]
-2. [Second step - targeted reading]
-3. [Third step - action]
-...
-
-Now executing..."
-
-Then proceed with tool calls.
-
-ERROR RECOVERY PROTOCOL:
-When a tool fails:
-1. Read the error message carefully
-2. Identify what's missing or wrong (e.g., missing parameters, file not found)
-3. Fix the issue and retry, or try a different approach
-4. Common fixes:
-   - edit_file needs old_text? → Use read_file first to get exact content
-   - Missing parameters? → Add them and retry
-   - File not found? → Use list_files to verify the correct path
-   - Can't find text to replace? → Read the file again and copy exact text
-
-TOOL USAGE BEST PRACTICES:
-- Before edit_file in replace mode: Use read_file first to see current content
-- Before delete_file: Consider if you can use edit_file instead
-- Before create_file: Use list_files to check if file already exists
-- After any write operation: Use read_file to verify the change worked
-
 SAFETY:
-- You have a maximum of ${MAX_ITERATIONS} iterations
-- Avoid infinite loops by trying different approaches when stuck
+- Maximum of ${MAX_ITERATIONS} iterations total
+- Always get plan approval before tool execution
 - Ask for clarification if task is unclear`;
 
   // Append custom instructions if found
@@ -150,7 +220,7 @@ ${customInstructions}
 Follow the custom project instructions above when working in this directory.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
   }
-  
+
   return systemPrompt;
 }
 
@@ -158,82 +228,157 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
   const messages: Message[] = [
     { role: 'user', content: userMessage }
   ];
-  
+
   let iterationCount = 0;
   let actionCount = 0;
+  let planApproved = false;
   const spinner = ora();
-  
+
   console.log(chalk.cyan('🎯 TASK:'), chalk.white(userMessage));
   console.log('');
-  
+
   while (iterationCount < MAX_ITERATIONS) {
     iterationCount++;
-    
+
     try {
-      spinner.start(chalk.gray(`Thinking... (iteration ${iterationCount}/${MAX_ITERATIONS})`));
-      
+      if (!planApproved) {
+        spinner.start(chalk.gray(`Creating plan... (iteration ${iterationCount}/${MAX_ITERATIONS})`));
+      } else {
+        spinner.start(chalk.gray(`Executing... (iteration ${iterationCount}/${MAX_ITERATIONS})`));
+      }
+
       const apiClient = getClient();
       const response = await apiClient.messages.create({
         model: MODEL,
         max_tokens: MAX_TOKENS,
         system: buildSystemPrompt(),
         messages: messages as any,
-        tools: tools as any,
+        tools: planApproved ? tools as any : [], // Only provide tools after plan approval
       });
-      
+
       spinner.stop();
-      
+
       // Handle text response
       const textBlocks = response.content.filter(block => block.type === 'text');
       if (textBlocks.length > 0) {
-        console.log(chalk.blue('💭 THINKING:'));
-        textBlocks.forEach((block: any) => {
-          console.log(chalk.white(block.text));
-        });
-        console.log('');
+        const fullText = textBlocks.map((block: any) => block.text).join('\n');
+
+        if (!planApproved) {
+          // Look for plan in the response
+          const plan = extractPlan(fullText);
+
+          if (plan) {
+            // Get user approval for the plan
+            const approval = await getUserPlanApproval(plan);
+
+            if (approval.approved) {
+              planApproved = true;
+              console.log(chalk.green('✅ Plan approved! Starting execution...'));
+              console.log('');
+
+              // If user provided a different plan, update the conversation
+              if (approval.newPlan) {
+                messages.push({
+                  role: 'user',
+                  content: `Please follow this plan instead:\n\n${approval.newPlan}\n\nNow execute this plan step by step.`
+                });
+              } else {
+                messages.push({
+                  role: 'user',
+                  content: 'Plan approved. Please execute it step by step.'
+                });
+              }
+              continue;
+            } else if (approval.feedback) {
+              console.log(chalk.yellow('📝 Plan needs adjustment...'));
+              console.log('');
+              messages.push({
+                role: 'user',
+                content: `Please revise the plan based on this feedback: ${approval.feedback}`
+              });
+              continue;
+            } else {
+              console.log(chalk.red('❌ Task cancelled by user'));
+              return;
+            }
+          } else {
+            // No plan found, show response and ask for plan
+            console.log(chalk.blue('💭 THINKING:'));
+            console.log(chalk.white(fullText));
+            console.log('');
+
+            messages.push({
+              role: 'user',
+              content: 'Please provide a clear numbered plan before proceeding. Start with "📋 PLAN:" and list specific steps.'
+            });
+            continue;
+          }
+        } else {
+          // Plan already approved, show execution thinking
+          console.log(chalk.blue('💭 THINKING:'));
+          console.log(chalk.white(fullText));
+          console.log('');
+        }
       }
-      
-      // Handle tool use
+
+      // Handle tool use (only if plan is approved)
       const toolUseBlocks = response.content.filter(block => block.type === 'tool_use');
-      
-      if (toolUseBlocks.length === 0) {
-        // No more tools to use, agent is done
+
+      if (!planApproved && toolUseBlocks.length > 0) {
+        // Agent is trying to use tools before plan approval
+        console.log(chalk.yellow('⚠️  Agent attempted to use tools before plan approval'));
+        messages.push({
+          role: 'user',
+          content: 'Please provide a clear plan first before using any tools. Start with "📋 PLAN:" and wait for approval.'
+        });
+        continue;
+      }
+
+      if (toolUseBlocks.length === 0 && planApproved) {
+        // No more tools to use and plan was approved, agent is done
         console.log(chalk.green('✅ COMPLETED'));
         console.log(chalk.gray(`Total iterations: ${iterationCount}`));
         console.log(chalk.gray(`Actions performed: ${actionCount}`));
         break;
+      } else if (toolUseBlocks.length === 0 && !planApproved) {
+        // No tools and no plan yet, continue to get plan
+        messages.push({
+          role: 'user',
+          content: 'Please provide a detailed plan with numbered steps before proceeding.'
+        });
+        continue;
       }
-      
+
       // Add assistant message
       messages.push({
         role: 'assistant',
         content: response.content
       });
-      
+
       // Execute tools
       const toolResults: any[] = [];
-      
+
       for (const toolUse of toolUseBlocks) {
         const toolBlock = toolUse as any;
         const toolName = toolBlock.name;
         const toolInput = toolBlock.input;
         const toolId = toolBlock.id;
-        
+
         actionCount++;
-        
+
         // Execute tool
         console.log(chalk.magenta('🔧 TOOL:'), chalk.white(toolName));
         console.log(chalk.gray('Input:'), chalk.dim(JSON.stringify(toolInput, null, 2)));
-        
+
         const spinner2 = ora(chalk.gray(`Executing ${toolName}...`)).start();
-        
+
         try {
           const result = await executeTool(toolName, toolInput);
           spinner2.succeed(chalk.green(`${toolName} completed`));
-          
+
           console.log(chalk.cyan('Result:'), chalk.white(result.substring(0, 500) + (result.length > 500 ? '...' : '')));
           console.log('');
-          
+
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolId,
@@ -243,7 +388,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
           spinner2.fail(chalk.red(`${toolName} failed`));
           console.log(chalk.red('Error:'), error.message);
           console.log('');
-          
+
           toolResults.push({
             type: 'tool_result',
             tool_use_id: toolId,
@@ -252,16 +397,16 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
           });
         }
       }
-      
+
       // Add tool results to messages
       messages.push({
         role: 'user',
         content: toolResults
       });
-      
+
     } catch (error: any) {
       spinner.stop();
-      
+
       // Provide helpful error messages for common issues
       if (error.status === 401) {
         console.error(chalk.red.bold('\n❌ Authentication Error\n'));
@@ -289,7 +434,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
       break;
     }
   }
-  
+
   if (iterationCount >= MAX_ITERATIONS) {
     console.log(chalk.yellow(`⚠️  Reached maximum iterations (${MAX_ITERATIONS})`));
   }

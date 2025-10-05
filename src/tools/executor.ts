@@ -5,6 +5,7 @@ import {
   deleteFile,
   listFiles,
   smartSearch,
+  smartReplace,
   runCommand
 } from './functions.js';
 
@@ -66,6 +67,24 @@ export async function executeTool(name: string, input: any): Promise<string> {
         throw new Error('smart_search search_type must be "filename" or "content"');
       }
       return await smartSearch(input);
+    
+    case 'smart_replace':
+      if (!input.path) {
+        throw new Error('smart_replace requires "path" parameter');
+      }
+      if (!input.search_mode) {
+        throw new Error('smart_replace requires "search_mode" parameter');
+      }
+      if (!['function', 'class', 'method', 'block', 'variable'].includes(input.search_mode)) {
+        throw new Error('smart_replace search_mode must be one of: function, class, method, block, variable');
+      }
+      if (!input.target) {
+        throw new Error('smart_replace requires "target" parameter (name of code element to replace)');
+      }
+      if (input.new_code === undefined || input.new_code === null) {
+        throw new Error('smart_replace requires "new_code" parameter');
+      }
+      return await smartReplace(input);
     
     case 'run_command':
       if (!input.command) {

@@ -286,3 +286,267 @@ export async function runCommand(args: {
     return errorMsg; // Return error as string instead of throwing
   }
 }
+
+export async function smartReplace(args: {
+  path: string;
+  search_mode: 'function' | 'class' | 'method' | 'block' | 'variable';
+  target: string;
+  new_code: string;
+  preserve_comments?: boolean;
+}): Promise<string> {
+  try {
+    const content = await fs.readFile(args.path, 'utf-8');
+    const lines = content.split('\n');
+    const preserve = args.preserve_comments !== false;
+    
+    let result = '';
+    let startLine = -1;
+    let endLine = -1;
+    let indentLevel = '';
+    
+    // Parse the file based on search mode
+    switch (args.search_mode) {
+      case 'function':
+        result = await replaceFunctionBlock(lines, args.target, args.new_code, preserve);
+        break;
+      case 'class':
+        result = await replaceClassBlock(lines, args.target, args.new_code, preserve);
+        break;
+      case 'method':
+        result = await replaceMethodBlock(lines, args.target, args.new_code, preserve);
+        break;
+      case 'block':
+        result = await replaceCodeBlock(lines, args.target, args.new_code, preserve);
+        break;
+      case 'variable':
+        result = await replaceVariableBlock(lines, args.target, args.new_code, preserve);
+        break;
+      default:
+        throw new Error(`Unsupported search_mode: ${args.search_mode}`);
+    }
+    
+    // Write the modified content back to file
+    await fs.writeFile(args.path, result, 'utf-8');
+    
+    return `Smart replacement completed successfully in ${args.path}\nMode: ${args.search_mode}\nTarget: ${args.target}`;
+    
+  } catch (error: any) {
+    throw new Error(`Smart replace failed: ${error.message}`);
+  }
+}
+
+/**
+ * Replace a function block by name
+ */
+async function replaceFunctionBlock(lines: string[], targetName: string, newCode: string, preserveComments: boolean): Promise<string> {
+  const functionPatterns = [
+    new RegExp(`^\\s*(export\\s+)?(async\\s+)?function\\s+${escapeRegex(targetName)}\\s*\\(`),
+    new RegExp(`^\\s*(export\\s+)?const\\s+${escapeRegex(targetName)}\\s*=\\s*(async\\s+)?\\(`),
+    new RegExp(`^\\s*(export\\s+)?const\\s+${escapeRegex(targetName)}\\s*=\\s*(async\\s+)?function`),
+    new RegExp(`^\\s*${escapeRegex(targetName)}\\s*:\\s*(async\\s+)?function`),
+  ];
+  
+  for (let i = 0; i < lines.length; i++) {
+    if (functionPatterns.some(pattern => pattern.test(lines[i]))) {
+      const { start, end, indent } = findCodeBlockEnd(lines, i);
+      return replaceBlockWithPreservation(lines, start, end, newCode, indent, preserveComments);
+    }
+  }
+  
+  throw new Error(`Function '${targetName}' not found`);
+}
+
+/**
+ * Replace a class block by name
+ */
+async function replaceClassBlock(lines: string[], targetName: string, newCode: string, preserveComments: boolean): Promise<string> {
+  const classPattern = new RegExp(`^\\s*(export\\s+)?(abstract\\s+)?class\\s+${escapeRegex(targetName)}(\\s|<|{|$)`);
+  
+  for (let i = 0; i < lines.length; i++) {
+    if (classPattern.test(lines[i])) {
+      const { start, end, indent } = findCodeBlockEnd(lines, i);
+      return replaceBlockWithPreservation(lines, start, end, newCode, indent, preserveComments);
+    }
+  }
+  
+  throw new Error(`Class '${targetName}' not found`);
+}
+
+/**
+ * Replace a method block by ClassName.methodName
+ */
+async function replaceMethodBlock(lines: string[], target: string, newCode: string, preserveComments: boolean): Promise<string> {
+  const [className, methodName] = target.split('.');
+  if (!className || !methodName) {
+    throw new Error('Method target must be in format "ClassName.methodName"');
+  }
+  
+  // Find the class first
+  const classPattern = new RegExp(`^\\s*(export\\s+)?(abstract\\s+)?class\\s+${escapeRegex(className)}(\\s|<|{|$)`);
+  let classStart = -1;
+  let classEnd = -1;
+  
+  for (let i = 0; i < lines.length; i++) {
+    if (classPattern.test(lines[i])) {
+      const result = findCodeBlockEnd(lines, i);
+      classStart = result.start;
+      classEnd = result.end;
+      break;
+    }
+  }
+  
+  if (classStart === -1) {
+    throw new Error(`Class '${className}' not found`);
+  }
+  
+  // Find the method within the class
+  const methodPatterns = [
+    new RegExp(`^\\s*(public|private|protected)?\\s*(static\\s+)?(async\\s+)?${escapeRegex(methodName)}\\s*\\(`),
+    new RegExp(`^\\s*${escapeRegex(methodName)}\\s*:\\s*(async\\s+)?function`),
+    new RegExp(`^\\s*${escapeRegex(methodName)}\\s*=\\s*(async\\s+)?\\(`),
+  ];
+  
+  for (let i = classStart; i <= classEnd; i++) {
+    if (methodPatterns.some(pattern => pattern.test(lines[i]))) {
+      const { start, end, indent } = findCodeBlockEnd(lines, i);
+      return replaceBlockWithPreservation(lines, start, end, newCode, indent, preserveComments);
+    }
+  }
+  
+  throw new Error(`Method '${methodName}' not found in class '${className}'`);
+}
+
+/**
+ * Replace a code block starting with a specific pattern
+ */
+async function replaceCodeBlock(lines: string[], startPattern: string, newCode: string, preserveComments: boolean): Promise<string> {
+  const pattern = new RegExp(escapeRegex(startPattern));
+  
+  for (let i = 0; i < lines.length; i++) {
+    if (pattern.test(lines[i].trim())) {
+      const { start, end, indent } = findCodeBlockEnd(lines, i);
+      return replaceBlockWithPreservation(lines, start, end, newCode, indent, preserveComments);
+    }
+  }
+  
+  throw new Error(`Block starting with '${startPattern}' not found`);
+}
+
+/**
+ * Replace a variable declaration
+ */
+async function replaceVariableBlock(lines: string[], targetName: string, newCode: string, preserveComments: boolean): Promise<string> {
+  const variablePatterns = [
+    new RegExp(`^\\s*(export\\s+)?(const|let|var)\\s+${escapeRegex(targetName)}\\s*[=:]`),
+  ];
+  
+  for (let i = 0; i < lines.length; i++) {
+    if (variablePatterns.some(pattern => pattern.test(lines[i]))) {
+      // For variables, find the end of the declaration (semicolon or end of statement)
+      let end = i;
+      let indent = lines[i].match(/^\\s*/)?.[0] || '';
+      
+      // Handle multi-line variable declarations
+      while (end < lines.length - 1) {
+        if (lines[end].includes(';') || (!lines[end + 1].trim().startsWith(' ') && lines[end + 1].trim() !== '')) {
+          break;
+        }
+        end++;
+      }
+      
+      return replaceBlockWithPreservation(lines, i, end, newCode, indent, preserveComments);
+    }
+  }
+  
+  throw new Error(`Variable '${targetName}' not found`);
+}
+
+/**
+ * Find the end of a code block (handles braces, function bodies, etc.)
+ */
+function findCodeBlockEnd(lines: string[], startLine: number): { start: number; end: number; indent: string } {
+  const startIndent = lines[startLine].match(/^\\s*/)?.[0] || '';
+  let braceCount = 0;
+  let inString = false;
+  let stringChar = '';
+  let end = startLine;
+  
+  // Check if this line has an opening brace
+  const hasOpenBrace = lines[startLine].includes('{');
+  
+  if (!hasOpenBrace) {
+    // For function expressions or single-line statements, try to find logical end
+    return { start: startLine, end: startLine, indent: startIndent };
+  }
+  
+  // Count braces to find the matching closing brace
+  for (let i = startLine; i < lines.length; i++) {
+    const line = lines[i];
+    
+    for (let j = 0; j < line.length; j++) {
+      const char = line[j];
+      
+      // Handle string literals
+      if ((char === '"' || char === "'" || char === '`') && !inString) {
+        inString = true;
+        stringChar = char;
+      } else if (char === stringChar && inString && line[j - 1] !== '\\\\') {
+        inString = false;
+        stringChar = '';
+      }
+      
+      // Count braces outside of strings
+      if (!inString) {
+        if (char === '{') braceCount++;
+        if (char === '}') braceCount--;
+      }
+    }
+    
+    // If we've closed all braces, we found the end
+    if (braceCount === 0 && i > startLine) {
+      end = i;
+      break;
+    }
+  }
+  
+  return { start: startLine, end, indent: startIndent };
+}
+
+/**
+ * Replace a block while preserving comments
+ */
+function replaceBlockWithPreservation(lines: string[], start: number, end: number, newCode: string, indent: string, preserveComments: boolean): string {
+  const before = lines.slice(0, start);
+  const after = lines.slice(end + 1);
+  
+  // Preserve comments above the block if requested
+  if (preserveComments && start > 0) {
+    let commentStart = start - 1;
+    while (commentStart >= 0 && (lines[commentStart].trim().startsWith('//') || lines[commentStart].trim().startsWith('/*') || lines[commentStart].trim() === '')) {
+      commentStart--;
+    }
+    commentStart++; // Move back to first comment line
+    
+    if (commentStart < start) {
+      // Move comments from before array to newCode
+      const comments = lines.slice(commentStart, start);
+      before.splice(commentStart);
+      newCode = comments.join('\\n') + '\\n' + newCode;
+    }
+  }
+  
+  // Apply indentation to new code
+  const indentedNewCode = newCode.split('\\n').map(line => {
+    if (line.trim() === '') return line;
+    return indent + line;
+  }).join('\\n');
+  
+  return [...before, indentedNewCode, ...after].join('\\n');
+}
+
+/**
+ * Escape special regex characters
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+}

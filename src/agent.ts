@@ -388,17 +388,14 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
   const spinner = ora();
   
   console.log(chalk.cyan('🎯 TASK:'), chalk.white(userMessage));
-  if (ENABLE_TOKEN_OPTIMIZATION) {
-    console.log(chalk.gray('💰 Token optimization: ENABLED'));
-  }
   console.log('');  while (iterationCount < MAX_ITERATIONS) {
     iterationCount++;
 
     try {
       if (!planApproved) {
-        spinner.start(chalk.gray(`Creating plan... (iteration ${iterationCount}/${MAX_ITERATIONS})`));
+        spinner.start(chalk.gray(`🤔 Planning step ${iterationCount}...`));
       } else {
-        spinner.start(chalk.gray(`Executing... (iteration ${iterationCount}/${MAX_ITERATIONS})`));
+        spinner.start(chalk.gray(`⚡ Executing step ${iterationCount}...`));
       }
 
       const apiClient = getClient();
@@ -499,12 +496,8 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
 
       if (toolUseBlocks.length === 0 && planApproved) {
         // No more tools to use and plan was approved, agent is done
-        console.log(chalk.green('✅ COMPLETED'));
-        console.log(chalk.gray(`Total iterations: ${iterationCount}`));
-        console.log(chalk.gray(`Actions performed: ${actionCount}`));
-        if (ENABLE_TOKEN_OPTIMIZATION) {
-          console.log(chalk.gray('💰 Token optimizations applied: message trimming, result truncation, prompt caching'));
-        }
+        console.log(chalk.green('✅ Task completed successfully!'));
+        console.log(chalk.gray(`   Steps: ${iterationCount} | Actions: ${actionCount}${ENABLE_TOKEN_OPTIMIZATION ? ' | Tokens optimized' : ''}`));
         break;
       } else if (toolUseBlocks.length === 0 && !planApproved) {
         // No tools and no plan yet, continue to get plan
@@ -533,10 +526,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         actionCount++;
 
         // Execute tool
-        console.log(chalk.magenta('🔧 TOOL:'), chalk.white(toolName));
-        console.log(chalk.gray('Input:'), chalk.dim(JSON.stringify(toolInput, null, 2)));
-
-        const spinner2 = ora(chalk.gray(`Executing ${toolName}...`)).start();
+        const spinner2 = ora(chalk.gray(`🔧 ${toolName}...`)).start();
 
         try {
           const result = await executeTool(toolName, toolInput);
@@ -546,9 +536,11 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
           const truncatedResult = truncateToolResult(result, toolName);
           const displayResult = truncatedResult.substring(0, 500) + (truncatedResult.length > 500 ? '...' : '');
           
-          console.log(chalk.cyan('Result:'), chalk.white(displayResult));
+          if (displayResult.trim()) {
+            console.log(chalk.cyan('📄 Result:'), chalk.white(displayResult));
+          }
           if (ENABLE_TOKEN_OPTIMIZATION && result.length > MAX_TOOL_RESULT_LENGTH) {
-            console.log(chalk.gray(`💰 Result truncated: ${result.length} → ${truncatedResult.length} chars (${Math.round((1 - truncatedResult.length / result.length) * 100)}% saved)`));
+            console.log(chalk.gray(`   💰 Optimized: ${Math.round((1 - truncatedResult.length / result.length) * 100)}% token savings`));
           }
           console.log('');
           
@@ -559,8 +551,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
           });
         } catch (error: any) {
           spinner2.fail(chalk.red(`${toolName} failed`));
-          console.log(chalk.red('Error:'), error.message);
-          console.log('');
+          console.log(chalk.red('❌ Error:'), error.message);
 
           toolResults.push({
             type: 'tool_result',

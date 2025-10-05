@@ -32,7 +32,7 @@ nexus -i  # Interactive mode
 npm install nexus-agent
 
 # Use with npx
-npx nexus "your task"
+npx nexus-agent "your task"
 ```
 
 ## Features
@@ -44,10 +44,18 @@ npx nexus "your task"
 - **Adaptive Planning**: Adjusts plan if something fails
 - **Progress Tracking**: Shows thinking, progress, and stats
 
+### Developer Experience
+- **Clean Output**: Reduced noise with clear, informative progress indicators
+- **Configuration Display**: Shows model, token limits, and optimization status at startup
+- **Smart Progress**: Context-aware spinner messages and clean result displays
+- **Error Clarity**: Clear error messages with actionable guidance
+- **Token Insights**: Real-time optimization feedback without overwhelming details
+
 ### Smart File Operations
 - **Create/Read/Edit/Delete files** with intelligent handling
 - **Smart Reading**: Line ranges, previews, search within files
 - **Smart Search**: Find files by name pattern or content
+- **Smart Replace**: Semantic code block replacement (functions, classes, methods)
 - **Directory Exclusions**: Automatically skips node_modules, .git, etc.
 - **Token Optimization**: 10K character limit prevents token explosion
 
@@ -197,6 +205,24 @@ nexus "Check git status and create a commit with all changes"
 nexus "Run the test suite and summarize the results"
 ```
 
+### Smart Code Replacement
+```bash
+# Replace a specific function with new implementation
+nexus "Replace the getUserData function with async version that uses fetch API"
+
+# Replace an entire class with new design
+nexus "Replace the UserService class with a new implementation using dependency injection"
+
+# Replace a method within a class
+nexus "Replace the login method in AuthService with OAuth2 implementation"
+
+# Replace a code block by pattern
+nexus "Replace the if statement checking user.isAdmin with role-based permissions"
+
+# Replace variable declarations
+nexus "Replace the API_URL constant with environment-based configuration"
+```
+
 ## Available Tools
 
 | Tool | Description |
@@ -312,6 +338,92 @@ npm install -g nexus-agent --prefix ~/.local
 # Add to PATH
 export PATH=$PATH:~/.local/bin
 ```
+
+## Smart Replace Feature 🧠
+
+The `smart_replace` tool provides semantic code block replacement, going beyond simple text replacement to understand code structure:
+
+### Supported Modes
+
+#### Function Replacement
+```typescript
+// Original function
+function getUserData(id: string) {
+  return database.users.find(id);
+}
+
+// Nexus command: "Replace getUserData function with async version"
+// Result:
+async function getUserData(id: string): Promise<User> {
+  return await database.users.findById(id);
+}
+```
+
+#### Class Replacement
+```typescript
+// Replace entire class definition
+class UserService {
+  // Old implementation
+}
+
+// Becomes:
+class UserService {
+  constructor(private db: Database) {}
+  
+  async getUser(id: string): Promise<User> {
+    return this.db.users.findById(id);
+  }
+}
+```
+
+#### Method Replacement
+```typescript
+// Replace specific method within class
+class AuthService {
+  login(username: string, password: string) {
+    // Old login logic
+  }
+}
+
+// Command: "Replace AuthService.login with OAuth2 implementation"
+// Replaces only the login method, preserving the rest of the class
+```
+
+#### Code Block Replacement
+```typescript
+// Replace conditional blocks, loops, or any code pattern
+if (user.role === 'admin') {
+  // Old admin check
+}
+
+// Command: "Replace admin check with role-based permissions"
+// Intelligently finds and replaces the entire if block
+```
+
+#### Variable Replacement
+```typescript
+// Replace variable declarations
+const API_URL = 'https://api.example.com';
+
+// Command: "Replace API_URL with environment-based configuration"
+// Result:
+const API_URL = process.env.API_URL || 'https://api.example.com';
+```
+
+### Key Features
+
+- **Language Aware**: Supports TypeScript, JavaScript, Python, and more
+- **Structure Preserving**: Maintains indentation and formatting
+- **Comment Preservation**: Keeps relevant comments with replaced code
+- **Scope Aware**: Finds methods within specific classes
+- **Syntax Validation**: Ensures valid code structure after replacement
+
+### Usage Tips
+
+1. **Be Specific**: Use exact function/class names for precise targeting
+2. **Provide Complete Code**: Include full replacement implementation
+3. **Test After Replace**: Nexus will verify syntax but always test functionality
+4. **Use with Read**: Read the file first to understand current structure
 
 ## Support
 

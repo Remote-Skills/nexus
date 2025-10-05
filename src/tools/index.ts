@@ -263,6 +263,92 @@ smart_search(pattern: "apiKey", search_type: "content")
     }
   },
   {
+    name: 'smart_replace',
+    description: `Intelligent code block replacement - Replace functions, classes, or logical code blocks semantically.
+
+🧠 SEMANTIC CODE REPLACEMENT:
+- Find code blocks by function/class/method names
+- Replace entire logical units (not just text)
+- Language-aware parsing and replacement
+- Preserve indentation and code structure
+
+SEARCH MODES:
+1. 🎯 'function' - Find and replace entire functions
+   smart_replace(path: "file.ts", search_mode: "function", target: "getUserData", new_code: "...")
+   → Finds function getUserData and replaces entire function body
+
+2. 🏗️ 'class' - Find and replace entire classes
+   smart_replace(path: "file.ts", search_mode: "class", target: "UserService", new_code: "...")
+   → Replaces entire class definition
+
+3. 🔧 'method' - Find and replace class methods
+   smart_replace(path: "file.ts", search_mode: "method", target: "UserService.login", new_code: "...")
+   → Finds login method in UserService class
+
+4. 🎛️ 'block' - Replace any code block by start pattern
+   smart_replace(path: "file.ts", search_mode: "block", target: "if (user.isAdmin)", new_code: "...")
+   → Finds and replaces entire if block
+
+5. 📝 'variable' - Replace variable declarations
+   smart_replace(path: "file.ts", search_mode: "variable", target: "const API_URL", new_code: "...")
+   → Replaces variable declaration and value
+
+INTELLIGENT FEATURES:
+- ✅ Preserves code formatting and indentation
+- ✅ Handles TypeScript, JavaScript, Python, etc.
+- ✅ Maintains imports and dependencies
+- ✅ Validates syntax after replacement
+- ✅ Shows before/after diff for confirmation
+
+BEST PRACTICES:
+1. Use read_file first to understand current structure
+2. Specify the exact function/class name to target
+3. Provide complete replacement code with proper syntax
+4. Verify with read_file after replacement
+
+EXAMPLES:
+smart_replace(
+  path: "src/auth.ts",
+  search_mode: "function", 
+  target: "validateUser",
+  new_code: "async function validateUser(token: string): Promise<User> { /* new impl */ }"
+)
+
+smart_replace(
+  path: "src/models.ts",
+  search_mode: "class",
+  target: "User", 
+  new_code: "class User { /* new class definition */ }"
+)`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'File path to edit'
+        },
+        search_mode: {
+          type: 'string',
+          enum: ['function', 'class', 'method', 'block', 'variable'],
+          description: 'Type of code element to find and replace'
+        },
+        target: {
+          type: 'string',
+          description: 'Name or pattern of the code element to replace (e.g., function name, class name, "ClassName.methodName" for methods)'
+        },
+        new_code: {
+          type: 'string',
+          description: 'Complete replacement code block with proper syntax and formatting'
+        },
+        preserve_comments: {
+          type: 'boolean',
+          description: 'Whether to preserve comments around the replaced code (default: true)'
+        }
+      },
+      required: ['path', 'search_mode', 'target', 'new_code']
+    }
+  },
+  {
     name: 'run_command',
     description: 'Execute a shell command and return its output. Includes timeout protection to prevent hanging. Use for: running tests, checking versions, installing packages, building projects, git operations, etc.',
     input_schema: {

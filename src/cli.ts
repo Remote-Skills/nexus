@@ -30,9 +30,23 @@ function printBanner() {
   }));
 }
 
+// Display configuration info
+function printConfigInfo() {
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+  const maxTokens = process.env.ANTHROPIC_MAX_TOKENS || '4096';
+  const tokenOptimization = process.env.NEXUS_OPTIMIZE_TOKENS !== 'false';
+  
+  console.log(chalk.cyan('⚙️  Configuration'));
+  console.log(chalk.gray(`   Model: ${model}`));
+  console.log(chalk.gray(`   Max Tokens: ${maxTokens}`));
+  console.log(chalk.gray(`   Token Optimization: ${tokenOptimization ? 'ON' : 'OFF'}`));
+  console.log('');
+}
+
 // Interactive mode
 async function interactiveMode() {
   printBanner();
+  printConfigInfo();
   
   console.log(chalk.gray('Type your task or "exit" to quit\n'));
   
@@ -107,6 +121,7 @@ program
     // Single task mode
     const task = taskArgs.join(' ');
     printBanner();
+    printConfigInfo();
     await chatWithToolsAgentic(task);
   });
 

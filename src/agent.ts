@@ -748,6 +748,12 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
 
       // Handle tool use (only if plan is approved)
       const toolUseBlocks = response.content.filter(block => block.type === 'tool_use');
+      
+      // Debug: Check if response was truncated
+      if (response.stop_reason === 'max_tokens') {
+        console.log(chalk.yellow('⚠️ WARNING: Claude response was truncated due to max_tokens limit'));
+        console.log(chalk.yellow('   This may cause incomplete tool calls with missing parameters'));
+      }
 
       if (!planApproved && toolUseBlocks.length > 0) {
         // Agent is trying to use tools before plan approval
@@ -793,6 +799,35 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         content: response.content
       });
 
+      // Validate tool calls before execution
+      let hasIncompleteToolCalls = false;
+      for (const toolUse of toolUseBlocks) {
+        const toolBlock = toolUse as any;
+        if (toolBlock.name === 'create_file' && (!toolBlock.input || toolBlock.input.content === undefined)) {
+          hasIncompleteToolCalls = true;
+          console.log(chalk.red('🚨 INCOMPLETE TOOL CALL DETECTED:'));
+          console.log(chalk.red(`   Tool: ${toolBlock.name}`));
+          console.log(chalk.red(`   Missing: content parameter`));
+          break;
+        }
+      }
+
+      if (hasIncompleteToolCalls) {
+        console.log(chalk.yellow('\n💡 Requesting Claude to retry with complete tool calls...'));
+        messages.push({
+          role: 'user',
+          content: `Your previous response contained incomplete tool calls (missing required parameters like 'content'). This usually happens when the response is truncated due to token limits.
+
+Please retry with a simpler approach:
+1. Create smaller files with essential content only
+2. Break large tasks into multiple smaller steps  
+3. Use shorter, more focused content
+
+Try again with complete tool parameters.`
+        });
+        continue; // Skip execution and let Claude retry
+      }
+
       // Execute tools
       const toolResults: any[] = [];
 
@@ -801,6 +836,22 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         const toolName = toolBlock.name;
         const toolInput = toolBlock.input;
         const toolId = toolBlock.id;
+
+        // Debug logging for troubleshooting
+        if (toolName === 'create_file') {
+          console.log('🐛 DEBUG create_file call:');
+          console.log('  toolInput:', JSON.stringify(toolInput, null, 2));
+          console.log('  has content:', toolInput?.content !== undefined);
+          console.log('  content length:', toolInput?.content?.length || 0);
+          
+          // Check for incomplete tool calls
+          if (toolInput?.content === undefined && toolInput?.path) {
+            console.log(chalk.red('🚨 DETECTED INCOMPLETE TOOL CALL:'));
+            console.log(chalk.red('   - Path provided but content missing'));
+            console.log(chalk.red('   - This suggests Claude response was truncated'));
+            console.log(chalk.red('   - Try increasing max_tokens or simplifying the request'));
+          }
+        }
 
         actionCount++;
 
@@ -861,6 +912,15 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         } catch (error: any) {
           spinner2.fail(chalk.red(`${toolName} failed`));
           console.log(chalk.red('❌ Error:'), error.message);
+          
+          // Special handling for create_file content missing error
+          if (toolName === 'create_file' && error.message.includes('requires "content" parameter')) {
+            console.log(chalk.yellow('\n💡 RECOVERY SUGGESTIONS:'));
+            console.log(chalk.yellow('   1. Claude response may have been truncated due to token limits'));
+            console.log(chalk.yellow('   2. Try breaking down the task into smaller steps'));
+            console.log(chalk.yellow('   3. Reduce the size of content being created'));
+            console.log(chalk.yellow('   4. Use multiple smaller create_file calls instead of one large file'));
+          }
 
           toolResults.push({
             type: 'tool_result',

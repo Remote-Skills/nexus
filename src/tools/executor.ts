@@ -17,6 +17,8 @@ export async function executeTool(name: string, input: any): Promise<string> {
         throw new Error('create_file requires "path" parameter');
       }
       if (input.content === undefined || input.content === null) {
+        console.log('🐛 create_file DEBUG - input object:', JSON.stringify(input, null, 2));
+        console.log('🐛 create_file DEBUG - input keys:', Object.keys(input || {}));
         throw new Error('create_file requires "content" parameter. Use empty string "" for blank file.');
       }
       return await createFile(input);

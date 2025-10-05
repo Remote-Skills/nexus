@@ -222,7 +222,7 @@ CRITICAL INSTRUCTIONS:
 1. ALWAYS create a detailed plan BEFORE taking any action
 2. Present your plan clearly and wait for user approval
 3. ONLY start using tools after the user approves the plan
-4. If the user requests changes, revise the plan accordingly
+4. AFTER plan approval: Execute the plan step-by-step using tools
 5. Be token-conscious: use smart_search and list_files before reading large files
 
 PLANNING PHASE REQUIREMENTS:
@@ -232,7 +232,14 @@ PLANNING PHASE REQUIREMENTS:
 - Include verification steps
 - End with "Waiting for user approval before execution..."
 
+EXECUTION PHASE (after plan approval):
+- DO NOT create another plan
+- Start executing the approved plan immediately using tools
+- Work through each step systematically
+- Use the tools to accomplish the task
+
 DO NOT USE ANY TOOLS until the user approves your plan!
+AFTER plan approval: USE TOOLS to execute the plan!
 
 ⚠️  TOKEN EFFICIENCY IS CRITICAL:
 - Reading files costs tokens - be strategic!
@@ -440,12 +447,12 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
               if (approval.newPlan) {
                 messages.push({
                   role: 'user',
-                  content: `Please follow this plan instead:\n\n${approval.newPlan}\n\nNow execute this plan step by step.`
+                  content: `Please follow this plan instead:\n\n${approval.newPlan}\n\nPlan is APPROVED. Start executing it now using the available tools. Do NOT create another plan.`
                 });
               } else {
                 messages.push({
                   role: 'user',
-                  content: 'Plan approved. Please execute it step by step.'
+                  content: 'Plan is APPROVED. Start executing it step by step using the available tools. Do NOT create another plan.'
                 });
               }
               continue;
@@ -495,10 +502,20 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
       }
 
       if (toolUseBlocks.length === 0 && planApproved) {
-        // No more tools to use and plan was approved, agent is done
-        console.log(chalk.green('✅ Task completed successfully!'));
-        console.log(chalk.gray(`   Steps: ${iterationCount} | Actions: ${actionCount}${ENABLE_TOKEN_OPTIMIZATION ? ' | Tokens optimized' : ''}`));
-        break;
+        // No more tools to use and plan was approved, but check if this is the first response after approval
+        if (messages.length > 0 && messages[messages.length - 1].content.includes('Plan is APPROVED')) {
+          // This is immediately after approval - AI should start using tools
+          messages.push({
+            role: 'user',
+            content: 'You need to start executing the approved plan using tools. Begin with the first step and use the appropriate tool.'
+          });
+          continue;
+        } else {
+          // Genuinely done with execution
+          console.log(chalk.green('✅ Task completed successfully!'));
+          console.log(chalk.gray(`   Steps: ${iterationCount} | Actions: ${actionCount}${ENABLE_TOKEN_OPTIMIZATION ? ' | Tokens optimized' : ''}`));
+          break;
+        }
       } else if (toolUseBlocks.length === 0 && !planApproved) {
         // No tools and no plan yet, continue to get plan
         messages.push({

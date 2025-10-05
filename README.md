@@ -102,6 +102,7 @@ npx nexus-agent "your task"
 - **Iteration Limits**: Max 15 iterations to prevent runaway
 - **Loop Detection**: Detects and warns about repeated actions
 - **Action Tracking**: Prevents duplicate operations
+- **Tool Pair Validation**: Ensures tool_use/tool_result blocks are properly matched
 - **Error Handling**: Graceful failure with helpful messages
 - **Command Timeouts**: Default 30s timeout prevents hanging on long-running commands
 - **Output Limits**: 10K character limit prevents memory issues from large outputs

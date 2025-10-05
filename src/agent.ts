@@ -396,8 +396,38 @@ function truncateToolResult(result: string, toolName: string): string {
 }
 
 /**
- * Trim conversation history to maintain context while saving tokens
+ * Trim conversation history while preserving tool_use/tool_result pairs
  */
+/**
+ * Validate that tool_use and tool_result blocks are properly paired
+ */
+function validateToolPairs(messages: Message[]): boolean {
+  const toolUseIds = new Set<string>();
+  const toolResultIds = new Set<string>();
+  
+  for (const message of messages) {
+    if (typeof message.content === 'object' && Array.isArray(message.content)) {
+      for (const block of message.content) {
+        if (block.type === 'tool_use') {
+          toolUseIds.add(block.id);
+        } else if (block.type === 'tool_result') {
+          toolResultIds.add(block.tool_use_id);
+        }
+      }
+    }
+  }
+  
+  // Check for orphaned tool_results
+  for (const resultId of toolResultIds) {
+    if (!toolUseIds.has(resultId)) {
+      console.error(chalk.red(`⚠️  Orphaned tool_result found: ${resultId}`));
+      return false;
+    }
+  }
+  
+  return true;
+}
+
 function trimConversationHistory(messages: Message[]): Message[] {
   if (!ENABLE_TOKEN_OPTIMIZATION || messages.length <= MAX_CONTEXT_MESSAGES) {
     return messages;
@@ -405,15 +435,53 @@ function trimConversationHistory(messages: Message[]): Message[] {
 
   // Always keep the first message (user's original request)
   const firstMessage = messages[0];
-  const recentMessages = messages.slice(-MAX_CONTEXT_MESSAGES + 1);
   
-  // Add a summary message about truncation
-  const summaryMessage: Message = {
-    role: 'user',
-    content: '[Previous conversation history truncated for token efficiency. Context preserved.]'
-  };
-
-  return [firstMessage, summaryMessage, ...recentMessages];
+  // Find safe truncation point that doesn't break tool pairs
+  let keepFromIndex = Math.max(1, messages.length - MAX_CONTEXT_MESSAGES + 1);
+  
+  // Scan backwards to find a safe truncation point
+  for (let i = keepFromIndex; i < messages.length; i++) {
+    const message = messages[i];
+    
+    // If this message has tool_result blocks, make sure we keep the corresponding tool_use
+    if (message.role === 'user' && typeof message.content === 'object' && Array.isArray(message.content)) {
+      const hasToolResults = message.content.some((block: any) => block.type === 'tool_result');
+      
+      if (hasToolResults && i > 0) {
+        // Make sure the previous message (should contain tool_use) is included
+        const prevMessage = messages[i - 1];
+        if (prevMessage.role === 'assistant') {
+          keepFromIndex = Math.min(keepFromIndex, i - 1);
+        }
+      }
+    }
+    
+    // If this is an assistant message with tool_use, ensure any following tool_results are kept
+    if (message.role === 'assistant' && typeof message.content === 'object' && Array.isArray(message.content)) {
+      const hasToolUse = message.content.some((block: any) => block.type === 'tool_use');
+      
+      if (hasToolUse && i < messages.length - 1) {
+        const nextMessage = messages[i + 1];
+        if (nextMessage.role === 'user' && typeof nextMessage.content === 'object') {
+          // Ensure we don't truncate before the tool_result
+          keepFromIndex = Math.min(keepFromIndex, i);
+        }
+      }
+    }
+  }
+  
+  const recentMessages = messages.slice(keepFromIndex);
+  
+  // Only add summary if we actually truncated something
+  if (keepFromIndex > 1) {
+    const summaryMessage: Message = {
+      role: 'user',
+      content: '[Previous conversation history truncated for token efficiency. Tool pairs preserved.]'
+    };
+    return [firstMessage, summaryMessage, ...recentMessages];
+  }
+  
+  return messages;
 }
 
 export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
@@ -445,6 +513,14 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
       const optimizedMessages = ENABLE_TOKEN_OPTIMIZATION 
         ? trimConversationHistory(messages)
         : messages;
+      
+      // Validate tool pairs before API call
+      if (!validateToolPairs(optimizedMessages)) {
+        console.error(chalk.red('❌ Tool validation failed. Resetting conversation state.'));
+        // Reset to just the original message to recover
+        const resetMessages = [messages[0]];
+        optimizedMessages.splice(0, optimizedMessages.length, ...resetMessages);
+      }
       
       // Build system prompt (cached after first call)
       const systemPrompt = buildSystemPrompt();
@@ -670,6 +746,11 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         console.error(chalk.red.bold('\n❌ Network Error\n'));
         console.log(chalk.yellow('Unable to connect to Anthropic\'s API.\n'));
         console.log(chalk.gray('Please check your internet connection and try again.\n'));
+      } else if (error.message && error.message.includes('tool_use_id')) {
+        console.error(chalk.red.bold('\n❌ Tool Synchronization Error\n'));
+        console.log(chalk.yellow('Tool use/result blocks are mismatched in conversation history.\n'));
+        console.log(chalk.gray('This usually happens when message history gets corrupted.\n'));
+        console.log(chalk.cyan('💡 Try restarting the task with a fresh session.\n'));
       } else {
         console.error(chalk.red('❌ Error:'), error.message);
         if (error.status) {

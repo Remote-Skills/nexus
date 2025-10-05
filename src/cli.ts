@@ -40,6 +40,7 @@ function printConfigInfo() {
   console.log(chalk.gray(`   Model: ${model}`));
   console.log(chalk.gray(`   Max Tokens: ${maxTokens}`));
   console.log(chalk.gray(`   Token Optimization: ${tokenOptimization ? 'ON' : 'OFF'}`));
+  console.log(chalk.gray('   💰 Token usage will be tracked in real-time'));
   console.log('');
 }
 

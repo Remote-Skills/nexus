@@ -14,6 +14,39 @@ const MAX_CONTEXT_MESSAGES = 10; // Limit conversation history
 const MAX_TOOL_RESULT_LENGTH = 2000; // Truncate long tool results
 const ENABLE_TOKEN_OPTIMIZATION = process.env.NEXUS_OPTIMIZE_TOKENS !== 'false';
 
+// Token usage tracking
+interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+let sessionTokenUsage: TokenUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0
+};
+
+// Rough token estimation (Claude Sonnet uses ~4 chars per token)
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function updateTokenUsage(input: string, output: string): void {
+  const inputTokens = estimateTokens(input);
+  const outputTokens = estimateTokens(output);
+  
+  sessionTokenUsage.inputTokens += inputTokens;
+  sessionTokenUsage.outputTokens += outputTokens;
+  sessionTokenUsage.totalTokens += inputTokens + outputTokens;
+}
+
+function formatTokenUsage(): string {
+  const total = sessionTokenUsage.totalTokens;
+  const cost = (total / 1000) * 0.003; // Rough cost estimate for Claude Sonnet
+  return `${total.toLocaleString()} tokens (~$${cost.toFixed(4)})`;
+}
+
 // Cache for expensive operations
 let cachedSystemPrompt: string | null = null;
 let cachedCustomInstructions: string | null = null;
@@ -395,6 +428,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
   const spinner = ora();
   
   console.log(chalk.cyan('🎯 TASK:'), chalk.white(userMessage));
+  console.log(chalk.gray(`💰 Session tokens: ${formatTokenUsage()}`));
   console.log('');  while (iterationCount < MAX_ITERATIONS) {
     iterationCount++;
 
@@ -415,6 +449,9 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
       // Build system prompt (cached after first call)
       const systemPrompt = buildSystemPrompt();
       
+      // Estimate input tokens for tracking
+      const inputText = systemPrompt + JSON.stringify(optimizedMessages);
+      
       const response = await apiClient.messages.create({
         model: MODEL,
         max_tokens: MAX_TOKENS,
@@ -422,6 +459,10 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         messages: optimizedMessages as any,
         tools: planApproved ? tools as any : [], // Only provide tools after plan approval
       });
+      
+      // Track token usage
+      const outputText = JSON.stringify(response.content);
+      updateTokenUsage(inputText, outputText);
 
       spinner.stop();
 
@@ -469,8 +510,8 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
               return;
             }
           } else {
-            // No plan found, show response and ask for plan
-            console.log(chalk.blue('💭 THINKING:'));
+            // No plan found, show response with better context
+            console.log(chalk.blue('� ANALYZING:'));
             console.log(chalk.white(fullText));
             console.log('');
 
@@ -513,7 +554,11 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         } else {
           // Genuinely done with execution
           console.log(chalk.green('✅ Task completed successfully!'));
-          console.log(chalk.gray(`   Steps: ${iterationCount} | Actions: ${actionCount}${ENABLE_TOKEN_OPTIMIZATION ? ' | Tokens optimized' : ''}`));
+          console.log(chalk.gray(`   Steps: ${iterationCount} | Actions: ${actionCount}`));
+          console.log(chalk.gray(`   💰 Total usage: ${formatTokenUsage()}`));
+          if (ENABLE_TOKEN_OPTIMIZATION) {
+            console.log(chalk.gray('   ⚙️ Token optimizations applied'));
+          }
           break;
         }
       } else if (toolUseBlocks.length === 0 && !planApproved) {
@@ -542,12 +587,31 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
 
         actionCount++;
 
-        // Execute tool
+        // Execute tool with enhanced visibility
         const spinner2 = ora(chalk.gray(`🔧 ${toolName}...`)).start();
+        
+        // Show what's happening for file operations
+        if (toolName === 'create_file' && toolInput.path) {
+          spinner2.text = chalk.gray(`📄 Creating ${path.basename(toolInput.path)}...`);
+        } else if (toolName === 'edit_file' && toolInput.path) {
+          spinner2.text = chalk.gray(`✏️ Editing ${path.basename(toolInput.path)}...`);
+        } else if (toolName === 'read_file' && toolInput.path) {
+          spinner2.text = chalk.gray(`🔍 Reading ${path.basename(toolInput.path)}...`);
+        }
 
         try {
           const result = await executeTool(toolName, toolInput);
-          spinner2.succeed(chalk.green(`${toolName} completed`));
+          
+          // Enhanced success messages for file operations
+          if (toolName === 'create_file' && toolInput.path) {
+            spinner2.succeed(chalk.green(`✓ Created ${path.basename(toolInput.path)}`));
+          } else if (toolName === 'edit_file' && toolInput.path) {
+            spinner2.succeed(chalk.green(`✓ Modified ${path.basename(toolInput.path)}`));
+          } else if (toolName === 'smart_search') {
+            spinner2.succeed(chalk.green(`✓ Search completed`));
+          } else {
+            spinner2.succeed(chalk.green(`✓ ${toolName} completed`));
+          }
           
           // Truncate result for token efficiency
           const truncatedResult = truncateToolResult(result, toolName);

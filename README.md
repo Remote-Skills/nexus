@@ -1,10 +1,9 @@
 # Nexus - Intelligent Agentic Code Assistant
 
-[![npm version](https://badge.fury.io/js/%40remo**Token Savings:**
-- 🔄 Cached system prompts save ~1000 tokens per API call
-- ✂️ Conversation trimming saves ~500-2000 tokens per long session  
-- 📦 Result truncation saves ~1000-5000 tokens per large file operation
-- 📄 Custom instruction limits prevent excessive prompt tokens
+- Cached system prompts save ~1000 tokens per API call
+- Conversation trimming saves ~500-2000 tokens per long session  
+- Result truncation saves ~1000-5000 tokens per large file operation
+- Custom instruction limits prevent excessive prompt tokens
 
 Total savings: **30-60% reduction in token usage** for typical workflows!
 
@@ -34,10 +33,10 @@ Nexus now includes live token usage monitoring:
 ```
 
 **Features:**
-- 💲 **Cost Estimation**: Real-time cost calculation based on current Claude Sonnet pricing
-- 📈 **Session Tracking**: Cumulative token usage across all operations
-- 🎯 **Operation Visibility**: See exactly which files are being created/modified
-- ⚡ **Live Updates**: Token count updates after each API calls%2Fnexus.svg)](https://www.npmjs.com/package/nexus-agent)
+- **Cost Estimation**: Real-time cost calculation based on current Claude Sonnet pricing
+- **Session Tracking**: Cumulative token usage across all operations
+- **Operation Visibility**: See exactly which files are being created/modified
+- **Live Updates**: Token count updates after each API calls
 [![Node.js 18+](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 

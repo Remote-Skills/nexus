@@ -21,11 +21,103 @@ interface TokenUsage {
   totalTokens: number;
 }
 
+// Session state tracking for recent operations
+interface SessionState {
+  recentOperations: string[];
+  createdFiles: string[];
+  modifiedFiles: string[];
+  deletedFiles: string[];
+  lastReset: number;
+}
+
 let sessionTokenUsage: TokenUsage = {
   inputTokens: 0,
   outputTokens: 0,
   totalTokens: 0
 };
+
+let sessionState: SessionState = {
+  recentOperations: [],
+  createdFiles: [],
+  modifiedFiles: [],
+  deletedFiles: [],
+  lastReset: Date.now()
+};
+
+// Reset session state if it's been more than 30 minutes
+function checkSessionReset(): void {
+  const thirtyMinutes = 30 * 60 * 1000;
+  if (Date.now() - sessionState.lastReset > thirtyMinutes) {
+    sessionState = {
+      recentOperations: [],
+      createdFiles: [],
+      modifiedFiles: [],
+      deletedFiles: [],
+      lastReset: Date.now()
+    };
+  }
+}
+
+// Track file operations
+function trackOperation(operation: string, filePath?: string): void {
+  checkSessionReset();
+  
+  // Keep only last 5 operations to avoid prompt bloat
+  if (sessionState.recentOperations.length >= 5) {
+    sessionState.recentOperations.shift();
+  }
+  sessionState.recentOperations.push(operation);
+  
+  if (filePath) {
+    const fileName = path.basename(filePath);
+    
+    if (operation.includes('create')) {
+      if (!sessionState.createdFiles.includes(fileName)) {
+        sessionState.createdFiles.push(fileName);
+      }
+    } else if (operation.includes('edit') || operation.includes('modif')) {
+      if (!sessionState.modifiedFiles.includes(fileName)) {
+        sessionState.modifiedFiles.push(fileName);
+      }
+    } else if (operation.includes('delet')) {
+      sessionState.deletedFiles.push(fileName);
+      // Remove from created/modified if deleted
+      sessionState.createdFiles = sessionState.createdFiles.filter(f => f !== fileName);
+      sessionState.modifiedFiles = sessionState.modifiedFiles.filter(f => f !== fileName);
+    }
+  }
+}
+
+// Generate session context for system prompt
+function getSessionContext(): string {
+  checkSessionReset();
+  
+  if (sessionState.recentOperations.length === 0) {
+    return '';
+  }
+  
+  let context = '\n\n📋 SESSION CONTEXT (avoid repeating these operations):';
+  
+  if (sessionState.createdFiles.length > 0) {
+    context += `\n✅ Created: ${sessionState.createdFiles.join(', ')}`;
+  }
+  
+  if (sessionState.modifiedFiles.length > 0) {
+    context += `\n✏️ Modified: ${sessionState.modifiedFiles.join(', ')}`;
+  }
+  
+  if (sessionState.deletedFiles.length > 0) {
+    context += `\n🗑️ Deleted: ${sessionState.deletedFiles.join(', ')}`;
+  }
+  
+  if (sessionState.recentOperations.length > 0) {
+    context += `\n🔄 Recent: ${sessionState.recentOperations.slice(-3).join(' → ')}`;
+  }
+  
+  context += '\n💡 Skip existence checks for files shown above. Build on previous work.';
+  
+  return context;
+}
 
 // Rough token estimation (Claude Sonnet uses ~4 chars per token)
 function estimateTokens(text: string): number {
@@ -299,7 +391,7 @@ function buildSystemPrompt(forceRebuild: boolean = false, taskComplexity: 'simpl
 - Show progress: "📄 Working..." → "✓ Done"
 - Be concise but informative
 
-TOOLS: list_files, create_file, edit_file, delete_file, smart_search, smart_replace, run_command`;
+TOOLS: list_files, create_file, edit_file, delete_file, smart_search, smart_replace, run_command${getSessionContext()}`;
     
   } else if (taskComplexity === 'complex') {
     systemPrompt = `You are Nexus, an intelligent agentic file assistant for complex tasks.
@@ -315,7 +407,7 @@ EXECUTION: After approval, execute systematically
 NO TOOLS until plan approved!
 
 TOOLS: list_files, smart_search, read_file (strategic use), create_file, edit_file, delete_file, smart_replace, run_command
-SAFETY: Max ${MAX_ITERATIONS} iterations`;
+SAFETY: Max ${MAX_ITERATIONS} iterations${getSessionContext()}`;
     
   } else {
     systemPrompt = `You are Nexus, an intelligent file assistant with adaptive complexity.
@@ -326,7 +418,7 @@ APPROACH:
 - Always be efficient
 
 TOOLS: list_files, smart_search, read_file, create_file, edit_file, delete_file, smart_replace, run_command
-SAFETY: Max ${MAX_ITERATIONS} iterations`;
+SAFETY: Max ${MAX_ITERATIONS} iterations${getSessionContext()}`;
   }
 
   // Append custom instructions if found (only if they're not too long)
@@ -701,6 +793,17 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
 
         try {
           const result = await executeTool(toolName, toolInput);
+          
+          // Track the operation for session context
+          if (toolName === 'create_file' && toolInput.path) {
+            trackOperation(`Created ${path.basename(toolInput.path)}`, toolInput.path);
+          } else if (toolName === 'edit_file' && toolInput.path) {
+            trackOperation(`Modified ${path.basename(toolInput.path)}`, toolInput.path);
+          } else if (toolName === 'delete_file' && toolInput.path) {
+            trackOperation(`Deleted ${path.basename(toolInput.path)}`, toolInput.path);
+          } else {
+            trackOperation(`Executed ${toolName}`);
+          }
           
           // Enhanced success messages for file operations
           if (toolName === 'create_file' && toolInput.path) {

@@ -606,22 +606,72 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
       // Estimate input tokens for tracking
       const inputText = JSON.stringify(apiMessages);
       
-      const response = await apiClient.chat.completions.create({
+      // Enable streaming for better responsiveness and timeout handling
+      const stream = await apiClient.chat.completions.create({
         model: MODEL,
         max_tokens: MAX_TOKENS,
         messages: apiMessages as any,
         tools: planApproved ? convertToolsToOpenAI(tools) : undefined,
+        stream: true,
       });
+
+      let fullContent = '';
+      const toolCallsMap = new Map<number, any>();
+      let isFirstChunk = true;
+
+      for await (const chunk of stream) {
+        if (isFirstChunk) {
+          spinner.stop();
+          isFirstChunk = false;
+        }
+
+        const delta = chunk.choices[0]?.delta;
+        if (!delta) continue;
+
+        if (delta.content) {
+          process.stdout.write(delta.content);
+          fullContent += delta.content;
+        }
+
+        if (delta.tool_calls) {
+          for (const toolCall of delta.tool_calls) {
+            const index = toolCall.index;
+            if (!toolCallsMap.has(index)) {
+              toolCallsMap.set(index, {
+                index,
+                id: toolCall.id,
+                type: toolCall.type,
+                function: { name: toolCall.function?.name || '', arguments: '' }
+              });
+            }
+            
+            const currentTool = toolCallsMap.get(index);
+            if (toolCall.id) currentTool.id = toolCall.id;
+            if (toolCall.type) currentTool.type = toolCall.type;
+            if (toolCall.function?.name) currentTool.function.name += toolCall.function.name;
+            if (toolCall.function?.arguments) currentTool.function.arguments += toolCall.function.arguments;
+          }
+        }
+      }
       
-      // Track token usage
-      const outputText = JSON.stringify(response);
+      // Add a newline after streaming content
+      if (fullContent) {
+        console.log('');
+      }
+
+      // Reconstruct the message object from stream data
+      const toolCalls = Array.from(toolCallsMap.values());
+      const message = {
+        role: 'assistant' as const,
+        content: fullContent || null,
+        tool_calls: toolCalls.length > 0 ? toolCalls : undefined
+      };
+      
+      // Track token usage (approximate for stream)
+      const outputText = JSON.stringify(message);
       updateTokenUsage(inputText, outputText);
 
-      spinner.stop();
-
-      const message = response.choices[0].message;
       const content = message.content;
-      const toolCalls = message.tool_calls;
 
       messages.push(message as Message);
 

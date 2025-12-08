@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import chalk from 'chalk';
 import ora from 'ora';
 import fs from 'fs';
@@ -188,23 +188,41 @@ let customInstructionsPath: string | null = null;
 let customInstructionsLastModified: number = 0;
 
 // Lazy client initialization
-let client: Anthropic;
-function getClient(): Anthropic {
+let client: OpenAI;
+function getClient(): OpenAI {
   if (!client) {
     if (!process.env.OPENROUTER_API_KEY) {
       throw new Error('OPENROUTER_API_KEY is not set');
     }
-    client = new Anthropic({
+    client = new OpenAI({
       apiKey: process.env.OPENROUTER_API_KEY,
       baseURL: 'https://openrouter.ai/api/v1',
+      defaultHeaders: {
+        'HTTP-Referer': 'https://github.com/remoteskills/nexus',
+        'X-Title': 'Nexus Agent',
+      },
     });
   }
   return client;
 }
 
+function convertToolsToOpenAI(anthropicTools: any[]) {
+  return anthropicTools.map(tool => ({
+    type: 'function' as const,
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.input_schema
+    }
+  }));
+}
+
 interface Message {
-  role: 'user' | 'assistant';
-  content: string | any[];
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string | null;
+  tool_calls?: any[];
+  tool_call_id?: string;
+  name?: string;
 }
 
 /**
@@ -480,26 +498,20 @@ function truncateToolResult(result: string, toolName: string): string {
  * Validate that tool_use and tool_result blocks are properly paired
  */
 function validateToolPairs(messages: Message[]): boolean {
-  const toolUseIds = new Set<string>();
-  const toolResultIds = new Set<string>();
+  const toolCallIds = new Set<string>();
   
   for (const message of messages) {
-    if (typeof message.content === 'object' && Array.isArray(message.content)) {
-      for (const block of message.content) {
-        if (block.type === 'tool_use') {
-          toolUseIds.add(block.id);
-        } else if (block.type === 'tool_result') {
-          toolResultIds.add(block.tool_use_id);
-        }
-      }
+    if (message.role === 'assistant' && message.tool_calls) {
+      message.tool_calls.forEach((tc: any) => toolCallIds.add(tc.id));
     }
   }
   
-  // Check for orphaned tool_results
-  for (const resultId of toolResultIds) {
-    if (!toolUseIds.has(resultId)) {
-      console.error(chalk.red(`⚠️  Orphaned tool_result found: ${resultId}`));
-      return false;
+  for (const message of messages) {
+    if (message.role === 'tool' && message.tool_call_id) {
+      if (!toolCallIds.has(message.tool_call_id)) {
+        console.error(chalk.red(`⚠️  Orphaned tool result found: ${message.tool_call_id}`));
+        return false;
+      }
     }
   }
   
@@ -511,50 +523,24 @@ function trimConversationHistory(messages: Message[]): Message[] {
     return messages;
   }
 
-  // Always keep the first message (user's original request)
   const firstMessage = messages[0];
-  
-  // Find safe truncation point that doesn't break tool pairs
   let keepFromIndex = Math.max(1, messages.length - MAX_CONTEXT_MESSAGES + 1);
   
-  // Scan backwards to find a safe truncation point
-  for (let i = keepFromIndex; i < messages.length; i++) {
-    const message = messages[i];
-    
-    // If this message has tool_result blocks, make sure we keep the corresponding tool_use
-    if (message.role === 'user' && typeof message.content === 'object' && Array.isArray(message.content)) {
-      const hasToolResults = message.content.some((block: any) => block.type === 'tool_result');
-      
-      if (hasToolResults && i > 0) {
-        // Make sure the previous message (should contain tool_use) is included
-        const prevMessage = messages[i - 1];
-        if (prevMessage.role === 'assistant') {
-          keepFromIndex = Math.min(keepFromIndex, i - 1);
-        }
-      }
-    }
-    
-    // If this is an assistant message with tool_use, ensure any following tool_results are kept
-    if (message.role === 'assistant' && typeof message.content === 'object' && Array.isArray(message.content)) {
-      const hasToolUse = message.content.some((block: any) => block.type === 'tool_use');
-      
-      if (hasToolUse && i < messages.length - 1) {
-        const nextMessage = messages[i + 1];
-        if (nextMessage.role === 'user' && typeof nextMessage.content === 'object') {
-          // Ensure we don't truncate before the tool_result
-          keepFromIndex = Math.min(keepFromIndex, i);
-        }
-      }
+  while (keepFromIndex < messages.length) {
+    const msg = messages[keepFromIndex];
+    if (msg.role === 'tool') {
+      keepFromIndex--;
+    } else {
+      break;
     }
   }
   
   const recentMessages = messages.slice(keepFromIndex);
   
-  // Only add summary if we actually truncated something
   if (keepFromIndex > 1) {
     const summaryMessage: Message = {
       role: 'user',
-      content: '[Previous conversation history truncated for token efficiency. Tool pairs preserved.]'
+      content: '[Previous conversation history truncated for token efficiency.]'
     };
     return [firstMessage, summaryMessage, ...recentMessages];
   }
@@ -582,7 +568,9 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
     console.log(chalk.gray('⚡ Skipping plan approval for simple task'));
   }
   console.log(chalk.gray(`💰 Session tokens: ${formatTokenUsage()}`));
-  console.log('');  while (iterationCount < MAX_ITERATIONS) {
+  console.log('');
+  
+  while (iterationCount < MAX_ITERATIONS) {
     iterationCount++;
 
     try {
@@ -610,27 +598,36 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
       // Build system prompt with task complexity
       const systemPrompt = buildSystemPrompt(false, taskComplexity);
       
+      const apiMessages = [
+        { role: 'system', content: systemPrompt },
+        ...optimizedMessages
+      ];
+
       // Estimate input tokens for tracking
-      const inputText = systemPrompt + JSON.stringify(optimizedMessages);
+      const inputText = JSON.stringify(apiMessages);
       
-      const response = await apiClient.messages.create({
+      const response = await apiClient.chat.completions.create({
         model: MODEL,
         max_tokens: MAX_TOKENS,
-        system: systemPrompt,
-        messages: optimizedMessages as any,
-        tools: planApproved ? tools as any : [], // Only provide tools after plan approval
+        messages: apiMessages as any,
+        tools: planApproved ? convertToolsToOpenAI(tools) : undefined,
       });
       
       // Track token usage
-      const outputText = JSON.stringify(response.content);
+      const outputText = JSON.stringify(response);
       updateTokenUsage(inputText, outputText);
 
       spinner.stop();
 
+      const message = response.choices[0].message;
+      const content = message.content;
+      const toolCalls = message.tool_calls;
+
+      messages.push(message as Message);
+
       // Handle text response
-      const textBlocks = response.content.filter(block => block.type === 'text');
-      if (textBlocks.length > 0) {
-        const fullText = textBlocks.map((block: any) => block.text).join('\n');
+      if (content) {
+        const fullText = content;
 
         if (!planApproved) {
           // Look for plan in the response
@@ -690,16 +687,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         }
       }
 
-      // Handle tool use (only if plan is approved)
-      const toolUseBlocks = response.content.filter(block => block.type === 'tool_use');
-      
-      // Debug: Check if response was truncated
-      if (response.stop_reason === 'max_tokens') {
-        console.log(chalk.yellow('⚠️ WARNING: Claude response was truncated due to max_tokens limit'));
-        console.log(chalk.yellow('   This may cause incomplete tool calls with missing parameters'));
-      }
-
-      if (!planApproved && toolUseBlocks.length > 0) {
+      if (!planApproved && toolCalls && toolCalls.length > 0) {
         // Agent is trying to use tools before plan approval
         console.log(chalk.yellow('⚠️  Agent attempted to use tools before plan approval'));
         messages.push({
@@ -709,9 +697,9 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         continue;
       }
 
-      if (toolUseBlocks.length === 0 && planApproved) {
+      if ((!toolCalls || toolCalls.length === 0) && planApproved) {
         // No more tools to use and plan was approved, but check if this is the first response after approval
-        if (messages.length > 0 && messages[messages.length - 1].content.includes('Plan is APPROVED')) {
+        if (messages.length > 0 && messages[messages.length - 2].content?.includes('Plan is APPROVED')) {
           // This is immediately after approval - AI should start using tools
           messages.push({
             role: 'user',
@@ -728,7 +716,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
           }
           break;
         }
-      } else if (toolUseBlocks.length === 0 && !planApproved) {
+      } else if ((!toolCalls || toolCalls.length === 0) && !planApproved) {
         // No tools and no plan yet, continue to get plan
         messages.push({
           role: 'user',
@@ -737,149 +725,94 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
         continue;
       }
 
-      // Add assistant message
-      messages.push({
-        role: 'assistant',
-        content: response.content
-      });
-
-      // Validate tool calls before execution
-      let hasIncompleteToolCalls = false;
-      for (const toolUse of toolUseBlocks) {
-        const toolBlock = toolUse as any;
-        if (toolBlock.name === 'create_file' && (!toolBlock.input || toolBlock.input.content === undefined)) {
-          hasIncompleteToolCalls = true;
-          console.log(chalk.red('🚨 INCOMPLETE TOOL CALL DETECTED:'));
-          console.log(chalk.red(`   Tool: ${toolBlock.name}`));
-          console.log(chalk.red(`   Missing: content parameter`));
-          break;
-        }
-      }
-
-      if (hasIncompleteToolCalls) {
-        console.log(chalk.yellow('\n💡 Requesting Claude to retry with complete tool calls...'));
-        messages.push({
-          role: 'user',
-          content: `Your previous response contained incomplete tool calls (missing required parameters like 'content'). This usually happens when the response is truncated due to token limits.
-
-Please retry with a simpler approach:
-1. Create smaller files with essential content only
-2. Break large tasks into multiple smaller steps  
-3. Use shorter, more focused content
-
-Try again with complete tool parameters.`
-        });
-        continue; // Skip execution and let Claude retry
-      }
-
       // Execute tools
-      const toolResults: any[] = [];
+      if (toolCalls) {
+        const toolResults: Message[] = [];
+        for (const toolCall of toolCalls) {
+          if (toolCall.type !== 'function') continue;
 
-      for (const toolUse of toolUseBlocks) {
-        const toolBlock = toolUse as any;
-        const toolName = toolBlock.name;
-        const toolInput = toolBlock.input;
-        const toolId = toolBlock.id;
-
-        // Debug logging for troubleshooting
-        if (toolName === 'create_file') {
-          console.log('🐛 DEBUG create_file call:');
-          console.log('  toolInput:', JSON.stringify(toolInput, null, 2));
-          console.log('  has content:', toolInput?.content !== undefined);
-          console.log('  content length:', toolInput?.content?.length || 0);
+          const toolName = toolCall.function.name;
+          const toolId = toolCall.id;
+          let toolInput: any;
           
-          // Check for incomplete tool calls
-          if (toolInput?.content === undefined && toolInput?.path) {
-            console.log(chalk.red('🚨 DETECTED INCOMPLETE TOOL CALL:'));
-            console.log(chalk.red('   - Path provided but content missing'));
-            console.log(chalk.red('   - This suggests Claude response was truncated'));
-            console.log(chalk.red('   - Try increasing max_tokens or simplifying the request'));
+          try {
+            toolInput = JSON.parse(toolCall.function.arguments);
+          } catch (e) {
+            console.error(chalk.red(`❌ Failed to parse arguments for tool ${toolName}`));
+            toolResults.push({
+              role: 'tool',
+              tool_call_id: toolId,
+              content: 'Error: Failed to parse JSON arguments'
+            });
+            continue;
           }
-        }
 
-        actionCount++;
-
-        // Execute tool with enhanced visibility
-        const spinner2 = ora(chalk.gray(`🔧 ${toolName}...`)).start();
-        
-        // Show what's happening for file operations
-        if (toolName === 'create_file' && toolInput.path) {
-          spinner2.text = chalk.gray(`📄 Creating ${path.basename(toolInput.path)}...`);
-        } else if (toolName === 'edit_file' && toolInput.path) {
-          spinner2.text = chalk.gray(`✏️ Editing ${path.basename(toolInput.path)}...`);
-        } else if (toolName === 'read_file' && toolInput.path) {
-          spinner2.text = chalk.gray(`🔍 Reading ${path.basename(toolInput.path)}...`);
-        }
-
-        try {
-          const result = await executeTool(toolName, toolInput);
+          actionCount++;
+          const spinner2 = ora(chalk.gray(`🔧 ${toolName}...`)).start();
           
-          // Track the operation for session context
           if (toolName === 'create_file' && toolInput.path) {
-            trackOperation(`Created ${path.basename(toolInput.path)}`, toolInput.path);
+            spinner2.text = chalk.gray(`📄 Creating ${path.basename(toolInput.path)}...`);
           } else if (toolName === 'edit_file' && toolInput.path) {
-            trackOperation(`Modified ${path.basename(toolInput.path)}`, toolInput.path);
-          } else if (toolName === 'delete_file' && toolInput.path) {
-            trackOperation(`Deleted ${path.basename(toolInput.path)}`, toolInput.path);
-          } else {
-            trackOperation(`Executed ${toolName}`);
-          }
-          
-          // Enhanced success messages for file operations
-          if (toolName === 'create_file' && toolInput.path) {
-            spinner2.succeed(chalk.green(`✓ Created ${path.basename(toolInput.path)}`));
-          } else if (toolName === 'edit_file' && toolInput.path) {
-            spinner2.succeed(chalk.green(`✓ Modified ${path.basename(toolInput.path)}`));
-          } else if (toolName === 'smart_search') {
-            spinner2.succeed(chalk.green(`✓ Search completed`));
-          } else {
-            spinner2.succeed(chalk.green(`✓ ${toolName} completed`));
-          }
-          
-          // Truncate result for token efficiency
-          const truncatedResult = truncateToolResult(result, toolName);
-          const displayResult = truncatedResult.substring(0, 500) + (truncatedResult.length > 500 ? '...' : '');
-          
-          if (displayResult.trim()) {
-            console.log(chalk.cyan('📄 Result:'), chalk.white(displayResult));
-          }
-          if (ENABLE_TOKEN_OPTIMIZATION && result.length > MAX_TOOL_RESULT_LENGTH) {
-            console.log(chalk.gray(`   💰 Optimized: ${Math.round((1 - truncatedResult.length / result.length) * 100)}% token savings`));
-          }
-          console.log('');
-          
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: toolId,
-            content: truncatedResult // Use truncated result for API
-          });
-        } catch (error: any) {
-          spinner2.fail(chalk.red(`${toolName} failed`));
-          console.log(chalk.red('❌ Error:'), error.message);
-          
-          // Special handling for create_file content missing error
-          if (toolName === 'create_file' && error.message.includes('requires "content" parameter')) {
-            console.log(chalk.yellow('\n💡 RECOVERY SUGGESTIONS:'));
-            console.log(chalk.yellow('   1. Claude response may have been truncated due to token limits'));
-            console.log(chalk.yellow('   2. Try breaking down the task into smaller steps'));
-            console.log(chalk.yellow('   3. Reduce the size of content being created'));
-            console.log(chalk.yellow('   4. Use multiple smaller create_file calls instead of one large file'));
+            spinner2.text = chalk.gray(`✏️ Editing ${path.basename(toolInput.path)}...`);
+          } else if (toolName === 'read_file' && toolInput.path) {
+            spinner2.text = chalk.gray(`🔍 Reading ${path.basename(toolInput.path)}...`);
           }
 
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: toolId,
-            content: `Error: ${error.message}`,
-            is_error: true
-          });
+          try {
+            const result = await executeTool(toolName, toolInput);
+            
+            // Track the operation for session context
+            if (toolName === 'create_file' && toolInput.path) {
+              trackOperation(`Created ${path.basename(toolInput.path)}`, toolInput.path);
+            } else if (toolName === 'edit_file' && toolInput.path) {
+              trackOperation(`Modified ${path.basename(toolInput.path)}`, toolInput.path);
+            } else if (toolName === 'delete_file' && toolInput.path) {
+              trackOperation(`Deleted ${path.basename(toolInput.path)}`, toolInput.path);
+            } else {
+              trackOperation(`Executed ${toolName}`);
+            }
+            
+            // Enhanced success messages for file operations
+            if (toolName === 'create_file' && toolInput.path) {
+              spinner2.succeed(chalk.green(`✓ Created ${path.basename(toolInput.path)}`));
+            } else if (toolName === 'edit_file' && toolInput.path) {
+              spinner2.succeed(chalk.green(`✓ Modified ${path.basename(toolInput.path)}`));
+            } else if (toolName === 'smart_search') {
+              spinner2.succeed(chalk.green(`✓ Search completed`));
+            } else {
+              spinner2.succeed(chalk.green(`✓ ${toolName} completed`));
+            }
+            
+            // Truncate result for token efficiency
+            const truncatedResult = truncateToolResult(result, toolName);
+            const displayResult = truncatedResult.substring(0, 500) + (truncatedResult.length > 500 ? '...' : '');
+            
+            if (displayResult.trim()) {
+              console.log(chalk.cyan('📄 Result:'), chalk.white(displayResult));
+            }
+            if (ENABLE_TOKEN_OPTIMIZATION && result.length > MAX_TOOL_RESULT_LENGTH) {
+              console.log(chalk.gray(`   💰 Optimized: ${Math.round((1 - truncatedResult.length / result.length) * 100)}% token savings`));
+            }
+            console.log('');
+            
+            toolResults.push({
+              role: 'tool',
+              tool_call_id: toolId,
+              content: truncatedResult
+            });
+          } catch (error: any) {
+            spinner2.fail(chalk.red(`${toolName} failed`));
+            console.log(chalk.red('❌ Error:'), error.message);
+            
+            toolResults.push({
+              role: 'tool',
+              tool_call_id: toolId,
+              content: `Error: ${error.message}`
+            });
+          }
         }
+        messages.push(...toolResults);
       }
-
-      // Add tool results to messages
-      messages.push({
-        role: 'user',
-        content: toolResults
-      });
 
     } catch (error: any) {
       spinner.stop();

@@ -1,7 +1,7 @@
 {
   "name": "nexus-agent",
-  "version": "1.2.0",
-  "description": "Intelligent Agentic File Assistant powered by Claude - Works cross-platform out of the box",
+  "version": "1.3.0",
+  "description": "Intelligent Agentic File Assistant powered by Open Router - Works cross-platform out of the box",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -20,8 +20,7 @@
   "keywords": [
     "ai",
     "agent",
-    "claude",
-    "anthropic",
+    "openrouter",
     "agentic",
     "cli",
     "automation",
@@ -41,11 +40,11 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.28.0",
     "boxen": "^5.1.2",
     "chalk": "^4.1.2",
     "commander": "^12.0.0",
     "dotenv": "^16.4.5",
+    "openai": "^6.10.0",
     "ora": "^5.4.1",
     "prompts": "^2.4.2"
   },

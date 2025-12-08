@@ -641,7 +641,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
                 index,
                 id: toolCall.id,
                 type: toolCall.type,
-                function: { name: toolCall.function?.name || '', arguments: '' }
+                function: { name: '', arguments: '' }
               });
             }
             

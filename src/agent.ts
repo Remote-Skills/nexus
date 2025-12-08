@@ -377,7 +377,6 @@ function loadCustomInstructionsUncached(): string | null {
  * Build the system prompt with caching optimization
  */
 function buildSystemPrompt(forceRebuild: boolean = false, taskComplexity: 'simple' | 'medium' | 'complex' = 'medium'): string {
-  // Use cached version if available and not forced to rebuild
   if (cachedSystemPrompt && !forceRebuild && ENABLE_TOKEN_OPTIMIZATION && taskComplexity === 'medium') {
     return cachedSystemPrompt;
   }
@@ -386,63 +385,35 @@ function buildSystemPrompt(forceRebuild: boolean = false, taskComplexity: 'simpl
   let systemPrompt = '';
   
   if (taskComplexity === 'simple') {
-    systemPrompt = `You are Nexus, an efficient file assistant. For simple tasks, work directly.
-
-🎯 SIMPLE MODE: Skip planning, use tools immediately for obvious operations.
-- Show progress: "📄 Working..." → "✓ Done"
-- Be concise but informative
-
-TOOLS: list_files, create_file, edit_file, delete_file, smart_search, smart_replace, run_command${getSessionContext()}`;
+    systemPrompt = `You are Nexus. Simple mode.
+Skip planning. Use tools immediately.
+Tools: list_files, create_file, edit_file, delete_file, smart_search, smart_replace, run_command${getSessionContext()}`;
     
   } else if (taskComplexity === 'complex') {
-    systemPrompt = `You are Nexus, an intelligent agentic file assistant for complex tasks.
-
-CRITICAL: 
-1. Create detailed plan FIRST
-2. Get user approval 
-3. THEN execute with tools
-4. Be token-efficient
-
-PLANNING: Start with "📋 PLAN:" → numbered steps → "Waiting for approval..."
-EXECUTION: After approval, execute systematically
-NO TOOLS until plan approved!
-
-TOOLS: list_files, smart_search, read_file (strategic use), create_file, edit_file, delete_file, smart_replace, run_command
-SAFETY: Max ${MAX_ITERATIONS} iterations${getSessionContext()}`;
+    systemPrompt = `You are Nexus. Complex mode.
+1. Plan (numbered steps)
+2. Wait for approval
+3. Execute
+Tools: list_files, smart_search, read_file, create_file, edit_file, delete_file, smart_replace, run_command
+Max ${MAX_ITERATIONS} iterations${getSessionContext()}`;
     
   } else {
-    systemPrompt = `You are Nexus, an intelligent file assistant with adaptive complexity.
-
-APPROACH:
-- Simple tasks: Work directly 
-- Complex tasks: Plan → approve → execute
-- Always be efficient
-
-TOOLS: list_files, smart_search, read_file, create_file, edit_file, delete_file, smart_replace, run_command
-SAFETY: Max ${MAX_ITERATIONS} iterations${getSessionContext()}`;
+    systemPrompt = `You are Nexus.
+Simple tasks: Direct execution.
+Complex tasks: Plan -> Approve -> Execute.
+Tools: list_files, smart_search, read_file, create_file, edit_file, delete_file, smart_replace, run_command
+Max ${MAX_ITERATIONS} iterations${getSessionContext()}`;
   }
 
-  // Append custom instructions if found (only if they're not too long)
   if (customInstructions) {
-    const maxCustomLength = 2000; // Limit custom instructions to 2000 chars
+    const maxCustomLength = 1000; // Reduced from 2000
     const truncatedInstructions = customInstructions.length > maxCustomLength 
-      ? customInstructions.substring(0, maxCustomLength) + '\n\n[...truncated for token efficiency]'
+      ? customInstructions.substring(0, maxCustomLength) + '\n[...truncated]'
       : customInstructions;
 
-    systemPrompt += `
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CUSTOM PROJECT INSTRUCTIONS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-${truncatedInstructions}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Follow the custom project instructions above when working in this directory.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    systemPrompt += `\n\nPROJECT INSTRUCTIONS:\n${truncatedInstructions}`;
   }
 
-  // Cache the result
   if (ENABLE_TOKEN_OPTIMIZATION) {
     cachedSystemPrompt = systemPrompt;
   }
@@ -454,77 +425,49 @@ Follow the custom project instructions above when working in this directory.
  * Truncate tool results to save tokens while preserving essential information
  */
 function truncateToolResult(result: string, toolName: string): string {
-  if (!ENABLE_TOKEN_OPTIMIZATION || result.length <= MAX_TOOL_RESULT_LENGTH) {
+  if (!ENABLE_TOKEN_OPTIMIZATION || result.length <= 1000) { // Reduced default limit
     return result;
   }
 
-  // Smart truncation based on tool type
   switch (toolName) {
     case 'list_files':
-      // Keep directory structure but limit file list
       const lines = result.split('\n');
-      if (lines.length > 50) {
-        return lines.slice(0, 30).join('\n') + 
-          `\n\n... [${lines.length - 30} more files truncated for token efficiency] ...\n\n` +
-          lines.slice(-10).join('\n');
+      if (lines.length > 30) {
+        return lines.slice(0, 20).join('\n') + 
+          `\n... [${lines.length - 25} files truncated] ...\n` +
+          lines.slice(-5).join('\n');
       }
       break;
     
     case 'read_file':
-      // Truncate from middle, keep beginning and end
-      const halfLength = Math.floor(MAX_TOOL_RESULT_LENGTH / 2);
+      // Allow more context for read_file but still truncate
+      if (result.length <= 3000) return result;
+      const halfLength = 1500;
       return result.substring(0, halfLength) + 
-        `\n\n... [${result.length - MAX_TOOL_RESULT_LENGTH} characters truncated for token efficiency] ...\n\n` +
+        `\n... [${result.length - 3000} chars truncated] ...\n` +
         result.substring(result.length - halfLength);
     
     case 'smart_search':
-      // Keep first few results
       const searchLines = result.split('\n');
-      if (searchLines.length > 20) {
-        return searchLines.slice(0, 20).join('\n') + 
-          `\n... [${searchLines.length - 20} more search results truncated] ...`;
+      if (searchLines.length > 15) {
+        return searchLines.slice(0, 15).join('\n') + 
+          `\n... [${searchLines.length - 15} results truncated] ...`;
       }
       break;
     
     case 'run_command':
-      // Enhanced handling for run_command output
-      if (result.includes('HIGH-RISK COMMAND DETECTED')) {
-        // Always show risk warnings in full
+      if (result.includes('HIGH-RISK') || result.includes('Error') || result.includes('error')) {
         return result;
       }
-      if (result.includes('❌ Command failed') || result.includes('ERROR') || result.includes('error')) {
-        // Keep full error output for debugging
-        return result;
-      }
-      if (result.includes('📝 Output truncated')) {
-        // Already smartly truncated by the tool
-        return result;
-      }
-      // For large successful outputs, apply additional token-conscious truncation
-      if (result.length > MAX_TOOL_RESULT_LENGTH) {
-        const lines = result.split('\n');
-        const headerLines = lines.slice(0, 5); // Keep command info
-        const outputStart = lines.findIndex(line => line.includes('📤 OUTPUT'));
-        if (outputStart > -1) {
-          // Keep header + first and last few lines of output
-          const outputLines = lines.slice(outputStart);
-          if (outputLines.length > 20) {
-            const firstOutputLines = outputLines.slice(0, 10);
-            const lastOutputLines = outputLines.slice(-10);
-            return [...headerLines, ...firstOutputLines, 
-              '... [middle output truncated for token efficiency] ...', 
-              ...lastOutputLines].join('\n');
-          }
-        }
-        return result.substring(0, MAX_TOOL_RESULT_LENGTH) + 
-          `\n\n... [output truncated for token efficiency] ...`;
+      if (result.length > 2000) {
+        return result.substring(0, 1000) + 
+          `\n... [output truncated] ...\n` + 
+          result.substring(result.length - 500);
       }
       break;
     
     default:
-      // Generic truncation
-      return result.substring(0, MAX_TOOL_RESULT_LENGTH) + 
-        `\n\n... [truncated for token efficiency] ...`;
+      return result.substring(0, 1000) + `\n... [truncated] ...`;
   }
 
   return result;

@@ -7,12 +7,18 @@ import prompts from 'prompts';
 import { tools } from './tools/index.js';
 import { executeTool } from './tools/executor.js';
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'anthropic/claude-sonnet-4.5';
 const MAX_TOKENS = parseInt(process.env.ANTHROPIC_MAX_TOKENS || '4096');
 const MAX_ITERATIONS = 15;
 const MAX_CONTEXT_MESSAGES = 10; // Limit conversation history
 const MAX_TOOL_RESULT_LENGTH = 2000; // Truncate long tool results
 const ENABLE_TOKEN_OPTIMIZATION = process.env.NEXUS_OPTIMIZE_TOKENS !== 'false';
+
+function getModel(): string {
+  return process.env.ANTHROPIC_MODEL || 'anthropic/claude-sonnet-4.5';
+}
+
+// Global conversation history
+let conversationHistory: Message[] = [];
 
 // Token usage tracking
 interface TokenUsage {
@@ -552,9 +558,9 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
   // Analyze task complexity to determine approach
   const taskComplexity = analyzeTaskComplexity(userMessage);
   
-  const messages: Message[] = [
-    { role: 'user', content: userMessage }
-  ];
+  // Add to global history
+  conversationHistory.push({ role: 'user', content: userMessage });
+  const messages = conversationHistory;
   
   let iterationCount = 0;
   let actionCount = 0;
@@ -608,7 +614,7 @@ export async function chatWithToolsAgentic(userMessage: string): Promise<void> {
       
       // Enable streaming for better responsiveness and timeout handling
       const stream = await apiClient.chat.completions.create({
-        model: MODEL,
+        model: getModel(),
         max_tokens: MAX_TOKENS,
         messages: apiMessages as any,
         tools: planApproved ? convertToolsToOpenAI(tools) : undefined,

@@ -73,11 +73,11 @@ async function interactiveMode() {
 program
   .name('nexus')
   .description('Intelligent Agentic File Assistant powered by Claude')
-  .version('1.0.0')
+  .version('1.3.3')
   .argument('[task...]', 'Task to execute')
   .option('-i, --interactive', 'Run in interactive mode')
   .option('-k, --api-key <key>', 'OpenRouter API key')
-  .option('-m, --model <model>', 'Model to use')
+  .option('-m, --model <model>', 'OpenRouter Model to use')
   .action(async (taskArgs: string[], options) => {
     // Set API key from CLI if provided
     if (options.apiKey) {

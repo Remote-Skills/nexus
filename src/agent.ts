@@ -7,7 +7,7 @@ import prompts from 'prompts';
 import { tools } from './tools/index.js';
 import { executeTool } from './tools/executor.js';
 
-const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+const MODEL = process.env.ANTHROPIC_MODEL || 'anthropic/claude-sonnet-4.5';
 const MAX_TOKENS = parseInt(process.env.ANTHROPIC_MAX_TOKENS || '4096');
 const MAX_ITERATIONS = 15;
 const MAX_CONTEXT_MESSAGES = 10; // Limit conversation history
@@ -191,11 +191,12 @@ let customInstructionsLastModified: number = 0;
 let client: Anthropic;
 function getClient(): Anthropic {
   if (!client) {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      throw new Error('ANTHROPIC_API_KEY is not set');
+    if (!process.env.OPENROUTER_API_KEY) {
+      throw new Error('OPENROUTER_API_KEY is not set');
     }
     client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
+      apiKey: process.env.OPENROUTER_API_KEY,
+      baseURL: 'https://openrouter.ai/api/v1',
     });
   }
   return client;

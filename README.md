@@ -101,10 +101,10 @@ npx nexus-agent "Implement user authentication flow"
 
 ```env
 # Required
-ANTHROPIC_API_KEY=your_api_key_here
+OPENROUTER_API_KEY=your_api_key_here
 
 # Optional - Production Defaults
-ANTHROPIC_MODEL=claude-sonnet-4-20250514
+ANTHROPIC_MODEL=anthropic/claude-sonnet-4.5
 ANTHROPIC_MAX_TOKENS=4096
 NEXUS_OPTIMIZE_TOKENS=true  # Cost optimization (recommended)
 ```
@@ -271,7 +271,7 @@ nexus --version
 ### System Requirements
 - **Node.js**: Version 18 or higher
 - **Operating System**: Windows, macOS, Linux (full cross-platform support)
-- **API Access**: Valid Anthropic API key
+- **API Access**: Valid OpenRouter API key
 
 ### Installation Methods
 
@@ -344,7 +344,7 @@ Nexus maintains operational context across a 30-minute session window:
 ```bash
 # Example output during execution
 Configuration
-   Model: claude-sonnet-4-20250514
+   Model: anthropic/claude-sonnet-4.5
    Token Optimization: ON
    
 Planning phase...
@@ -365,13 +365,13 @@ Task completed successfully!
 #### API Key Configuration
 ```bash
 # Verify API key is set
-echo $ANTHROPIC_API_KEY
+echo $OPENROUTER_API_KEY
 
 # Temporary key override
 nexus -k your_api_key "test task"
 
 # Permanent configuration
-export ANTHROPIC_API_KEY=your_key
+export OPENROUTER_API_KEY=your_key
 ```
 
 #### Installation Problems

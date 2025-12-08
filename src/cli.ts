@@ -32,7 +32,7 @@ function printBanner() {
 
 // Display configuration info
 function printConfigInfo() {
-  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+  const model = process.env.ANTHROPIC_MODEL || 'anthropic/claude-sonnet-4.5';
   const maxTokens = process.env.ANTHROPIC_MAX_TOKENS || '4096';
   const tokenOptimization = process.env.NEXUS_OPTIMIZE_TOKENS !== 'false';
 
@@ -76,12 +76,12 @@ program
   .version('1.0.0')
   .argument('[task...]', 'Task to execute')
   .option('-i, --interactive', 'Run in interactive mode')
-  .option('-k, --api-key <key>', 'Anthropic API key')
-  .option('-m, --model <model>', 'Claude model to use')
+  .option('-k, --api-key <key>', 'OpenRouter API key')
+  .option('-m, --model <model>', 'Model to use')
   .action(async (taskArgs: string[], options) => {
     // Set API key from CLI if provided
     if (options.apiKey) {
-      process.env.ANTHROPIC_API_KEY = options.apiKey;
+      process.env.OPENROUTER_API_KEY = options.apiKey;
     }
 
     if (options.model) {
@@ -89,26 +89,26 @@ program
     }
 
     // Check API key
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.OPENROUTER_API_KEY) {
       printBanner();
       console.error(chalk.red.bold('\n❌ API Key Not Found\n'));
-      console.log(chalk.yellow('Nexus requires an Anthropic API key to function.\n'));
+      console.log(chalk.yellow('Nexus requires an OpenRouter API key to function.\n'));
 
       console.log(chalk.cyan.bold('🔑 Setup Options:\n'));
 
       console.log(chalk.white('1️⃣  Create a ') + chalk.green('.env') + chalk.white(' file in your project:'));
-      console.log(chalk.gray('   echo "ANTHROPIC_API_KEY=sk-ant-your-key-here" > .env\n'));
+      console.log(chalk.gray('   echo "OPENROUTER_API_KEY=sk-or-your-key-here" > .env\n'));
 
       console.log(chalk.white('2️⃣  Pass it as a command-line argument:'));
-      console.log(chalk.gray('   nexus --api-key sk-ant-your-key-here "your task"\n'));
+      console.log(chalk.gray('   nexus --api-key sk-or-your-key-here "your task"\n'));
 
       console.log(chalk.white('3️⃣  Set as an environment variable:'));
       console.log(chalk.gray('   # Windows (PowerShell):'));
-      console.log(chalk.gray('   $env:ANTHROPIC_API_KEY="sk-ant-your-key-here"\n'));
+      console.log(chalk.gray('   $env:OPENROUTER_API_KEY="sk-or-your-key-here"\n'));
       console.log(chalk.gray('   # Linux/Mac:'));
-      console.log(chalk.gray('   export ANTHROPIC_API_KEY="sk-ant-your-key-here"\n'));
+      console.log(chalk.gray('   export OPENROUTER_API_KEY="sk-or-your-key-here"\n'));
 
-      console.log(chalk.cyan('📖 Get your API key from: ') + chalk.blue.underline('https://console.anthropic.com/'));
+      console.log(chalk.cyan('📖 Get your API key from: ') + chalk.blue.underline('https://openrouter.ai/keys'));
       console.log(chalk.gray('\nFor more help, visit: ') + chalk.blue('https://github.com/remoteskills/nexus\n'));
       process.exit(1);
     }
